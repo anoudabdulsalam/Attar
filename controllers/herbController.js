@@ -16,6 +16,8 @@ const addHerb = async (req, res) => {
       quantity,
       storeOwnerId,
       storeName,
+      onSale,
+      salePrice,
     } = req.body;
 
     if (!name) {
@@ -37,6 +39,8 @@ const addHerb = async (req, res) => {
       quantity,
       storeOwnerId,
       storeName,
+      onSale,
+      salePrice,
     });
 
     await newHerb.save();
@@ -143,10 +147,49 @@ const deleteHerb = async (req, res) => {
   }
 };
 
+const addCommentToHerb = async (req, res) => {
+  try {
+    const { userId, userName, userRole, text } = req.body;
+
+    if (!text) {
+      return res.status(400).json({
+        message: "Comment text is required",
+      });
+    }
+
+    const herb = await Herb.findById(req.params.id);
+
+    if (!herb) {
+      return res.status(404).json({
+        message: "Herb not found",
+      });
+    }
+
+    herb.comments.unshift({
+      userId,
+      userName,
+      userRole,
+      text,
+    });
+
+    await herb.save();
+
+    res.status(200).json({
+      message: "Comment added successfully",
+      herb,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
 module.exports = {
   addHerb,
   getAllHerbs,
   getHerbById,
   updateHerb,
   deleteHerb,
+  addCommentToHerb,
 };

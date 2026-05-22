@@ -18,7 +18,8 @@ app.use("/api/users", require("./routes/userRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/orders", require("./routes/orderRoutes"));
 app.use("/api/ai/herb-chat", require("./routes/aiChatRoutes"));
-
+const chatRoutes = require("./routes/chatRoutes");
+app.use("/api/chat", chatRoutes);
 app.get("/", (req, res) => {
   res.json({ message: "Attar backend is running" });
 });

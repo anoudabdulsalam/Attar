@@ -1,38 +1,113 @@
-const Order = require('../models/orderModel');
+const Order = require("../models/Order");
+const Herb = require("../models/Herb");
 
 const createOrder = async (req, res) => {
   try {
-    const { customerName, items, totalPrice, paymentMethod, deliveryLocation, status } = req.body;
+    const { buyerId, buyerName, buyerRole, storeOwnerId, storeName, items, totalPrice } = req.body;
 
-    if (!deliveryLocation || deliveryLocation.lat == null || deliveryLocation.lng == null) {
-      return res.status(400).json({ message: 'Delivery location is required' });
+    if (!buyerId || !storeOwnerId || !items || items.length === 0) {
+      return res.status(400).json({ message: "Missing order data" });
     }
 
-    if (!totalPrice || !paymentMethod) {
-      return res.status(400).json({ message: 'totalPrice and paymentMethod are required' });
+    for (const item of items) {
+      const herb = await Herb.findById(item.herbId);
+
+      if (!herb) {
+        return res.status(404).json({ message: `Herb not found: ${item.herbName}` });
+      }
+
+      if (herb.quantity < item.quantity) {
+        return res.status(400).json({
+          message: `الكمية غير كافية من ${herb.name}`,
+        });
+      }
+
+      herb.quantity -= item.quantity;
+      await herb.save();
     }
 
     const order = await Order.create({
-      customerName: customerName || 'Customer',
-      items: items || [],
+      buyerId,
+      buyerName,
+      buyerRole,
+      storeOwnerId,
+      storeName,
+      items,
       totalPrice,
-      paymentMethod,
-      deliveryLocation,
-      status: status || 'pending',
+      status: "قيد التحضير",
     });
 
-    return res.status(201).json({
-      message: 'Order created successfully',
+    res.status(201).json({
+      message: "Order created successfully",
       order,
     });
   } catch (error) {
-    return res.status(500).json({
-      message: 'Failed to create order',
-      error: error.message,
-    });
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const getOrdersByBuyer = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      buyerId: req.params.buyerId,
+      status: { $ne: "تم الاستلام" },
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const getOrdersByStoreOwner = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      storeOwnerId: req.params.storeOwnerId,
+      status: { $ne: "تم الاستلام" },
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const getAllOrdersByStoreOwner = async (req, res) => {
+  try {
+    const orders = await Order.find({
+      storeOwnerId: req.params.storeOwnerId,
+    }).sort({ createdAt: -1 });
+
+    res.status(200).json({ orders });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+const updateOrderStatus = async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    res.status(200).json({ message: "Order updated", order });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
 module.exports = {
   createOrder,
+  getOrdersByBuyer,
+  getOrdersByStoreOwner,
+  updateOrderStatus,
+  getAllOrdersByStoreOwner,
 };

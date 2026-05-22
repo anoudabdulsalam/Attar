@@ -7,9 +7,13 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    name: {
+    herbName: {
       type: String,
       required: true,
+      trim: true,
+    },
+    imageUrl: {
+      type: String,
       trim: true,
     },
     quantity: {
@@ -28,30 +32,46 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
-    customerId: {
+    buyerId: {
       type: String,
       required: true,
       trim: true,
     },
-    shopOwnerId: {
+    buyerName: {
+      type: String,
+      trim: true,
+    },
+    buyerRole: {
+      type: String,
+      trim: true,
+    },
+
+    storeOwnerId: {
       type: String,
       required: true,
       trim: true,
     },
+    storeName: {
+      type: String,
+      trim: true,
+    },
+
     items: {
       type: [orderItemSchema],
       required: true,
       default: [],
     },
+
     totalPrice: {
       type: Number,
       required: true,
       default: 0,
     },
+
     status: {
       type: String,
-      enum: ["pending", "confirmed", "shipped", "delivered", "cancelled"],
-      default: "pending",
+      enum: ["قيد التحضير", "جاهز ومع شركة التوصيل", "تم الاستلام"],
+      default: "قيد التحضير",
     },
   },
   { timestamps: true }
