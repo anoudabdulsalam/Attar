@@ -322,7 +322,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'الألوفيرا',
                                       benefits: 'مفيد للبشرة والهضم',
                                       howToUse: 'يستخدم جل',
-                                      price: '15 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -330,7 +330,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'اليانسون',
                                       benefits: 'مفيد للسعال والهضم',
                                       howToUse: 'يشرب مغلي',
-                                      price: '20 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -338,7 +338,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'الريحان',
                                       benefits: 'مضاد للالتهاب',
                                       howToUse: 'يستخدم في الطعام أو كشاي',
-                                      price: '30 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -346,7 +346,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'ورق الغار',
                                       benefits: 'مفيد للهضم',
                                       howToUse: 'يستخدم في الطبخ',
-                                      price: '66 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -354,7 +354,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'حبة البركة',
                                       benefits: 'تقوي المناعة',
                                       howToUse: 'تؤكل أو تستخدم بالزيت',
-                                      price: '14 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -362,7 +362,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'الهيل',
                                       benefits: 'يحسن الهضم',
                                       howToUse: 'يضاف للمشروبات',
-                                      price: '16 ₪',
+                                      price: ' ',
                                     ),
                                     SizedBox(width: 30),
                                     HerbCard(
@@ -370,7 +370,7 @@ class _MainScreenState extends State<MainScreen> {
                                       name: 'البابونج',
                                       benefits: 'مهدئ للأعصاب ويساعد على النوم',
                                       howToUse: 'يشرب كشاي',
-                                      price: '10 ₪',
+                                      price: ' ',
                                     ),
                                   ],
                                 ),

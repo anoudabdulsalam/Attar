@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-//import 'welcome_screen.dart';
-import 'home_customer_screen.dart';
+import 'welcome_screen.dart';
+//import 'home_customer_screen.dart';
 //import 'home_expert_screen.dart';
 //import 'home_shop_owner_screen.dart';
 
@@ -26,8 +26,8 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
 
-      //home: const WelcomeScreen(),
-      home: const HomeCustomerScreen(),
+      home: const WelcomeScreen(),
+      //home: const HomeCustomerScreen(),
       //home: const HomeExpertScreen(),
       //home: const HomeShopOwnerScreen(),
     );

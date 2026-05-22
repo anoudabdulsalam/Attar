@@ -44,7 +44,7 @@ class AboutUsHomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 30),
                       _buildTeamMemberCard(
-                        imageUrl: 'assets/images/Eman.jpg',
+                        imageUrl: 'assets/images/eman.jpeg',
                         name: 'إيمان العط',
                         major: 'هندسة حاسوب',
                       ),

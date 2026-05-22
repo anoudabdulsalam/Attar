@@ -2,79 +2,123 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'herb_post_dialog.dart';
+import 'services/chat_service.dart';
 
 class ChatDetailShopOwnerScreen extends StatefulWidget {
-  final String chatName;
+  final String receiverId;
+  final String receiverName;
+  final String receiverRole;
+  final String currentUserRole;
   final bool isStore;
 
   const ChatDetailShopOwnerScreen({
     super.key,
-    required this.chatName,
+    required this.receiverId,
+    required this.receiverName,
+    required this.receiverRole,
+    required this.currentUserRole,
     required this.isStore,
   });
 
-  // Global mock chat history storage
-  static Map<String, List<Map<String, dynamic>>> chatHistory = {};
-
-  // Method to mock sharing a post
-  static void addSharedPost(String expertName, Map<String, dynamic> plant) {
-    if (!chatHistory.containsKey(expertName)) {
-      chatHistory[expertName] = [
-        {
-          'type': 'text',
-          'text': 'أهلاً بك! كيف يمكنني مساعدتك؟',
-          'isMe': false,
-          'time': '10:05 ص',
-        },
-      ];
-    }
-    chatHistory[expertName]!.add({
-      'type': 'post',
-      'herb': plant,
-      'isMe': true,
-      'time': 'الآن',
-    });
-  }
-
   @override
-  State<ChatDetailShopOwnerScreen> createState() => _ChatDetailScreenState();
+  State<ChatDetailShopOwnerScreen> createState() => _ChatDetailShopOwnerScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
+class _ChatDetailShopOwnerScreenState extends State<ChatDetailShopOwnerScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
 
   List<Map<String, dynamic>> _messages = [];
 
+  String? _conversationId;
+  String? _currentUserId;
+  bool _isLoading = true;
+
   @override
   void initState() {
     super.initState();
-    // Initialize dummy data for this chat if empty
-    if (!ChatDetailShopOwnerScreen.chatHistory.containsKey(widget.chatName)) {
-      ChatDetailShopOwnerScreen.chatHistory[widget.chatName] = [
-        {
-          'type': 'text',
-          'text': 'مرحباً، هل يمكنني الاستفسار عن أحد منتجاتكم؟',
-          'isMe': true,
-          'time': '10:00 ص',
-        },
-        {
-          'type': 'text',
-          'text': 'أهلاً بك! بالتأكيد، تفضل كيف يمكنني مساعدتك؟',
-          'isMe': false,
-          'time': '10:05 ص',
-        },
-      ];
-    }
-    // Load local reference
-    _messages = ChatDetailShopOwnerScreen.chatHistory[widget.chatName]!;
+    _setupConversation();
+  }
 
-    // Scroll to bottom initial wait
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
-    });
+  Future<void> _setupConversation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUserId = prefs.getString('userId');
+
+      if (_currentUserId == null || _currentUserId!.isEmpty) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final conversation = await ChatService.createConversation(
+        user1Id: _currentUserId!,
+        user1Role: widget.currentUserRole,
+        user2Id: widget.receiverId,
+        user2Role: widget.receiverRole,
+        chatName: widget.receiverName,
+      );
+
+      _conversationId = conversation['_id']?.toString();
+
+      if (_conversationId != null) {
+        await ChatService.markMessagesAsRead(
+          conversationId: _conversationId!,
+          userId: _currentUserId!,
+        );
+
+        final dbMessages = await ChatService.getMessages(_conversationId!);
+
+        _messages = dbMessages.map<Map<String, dynamic>>((msg) {
+          return {
+            'type': msg['type'] ?? 'text',
+            'text': msg['text'] ?? '',
+            'herb': msg['herb'],
+            'isMe': msg['senderId']?.toString() == _currentUserId,
+            'time': _formatTime(msg['createdAt']),
+          };
+        }).toList();
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+    } catch (e) {
+      debugPrint('CHAT LOAD ERROR: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل المحادثة: $e')),
+      );
+    }
+  }
+
+  String _formatTime(dynamic createdAt) {
+    if (createdAt == null) return 'الآن';
+
+    try {
+      final date = DateTime.parse(createdAt.toString()).toLocal();
+      final hour = date.hour.toString().padLeft(2, '0');
+      final minute = date.minute.toString().padLeft(2, '0');
+      return '$hour:$minute';
+    } catch (_) {
+      return 'الآن';
+    }
   }
 
   void _scrollToBottom() {
@@ -87,49 +131,74 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
     }
   }
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    if (_currentUserId == null || _currentUserId!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لم يتم العثور على المستخدم الحالي')),
+      );
+      return;
+    }
 
     setState(() {
       _messages.add({
         'type': 'text',
-        'text': _messageController.text.trim(),
+        'text': text,
         'isMe': true,
         'time': 'الآن',
       });
     });
+
     _messageController.clear();
     _scrollToBottom();
 
-    // Mock reply
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (mounted) {
-        setState(() {
-          _messages.add({
-            'type': 'text',
-            'text': 'شكراً لتواصلك، سنقوم بالرد عليك في أقرب وقت ممكن.',
-            'isMe': false,
-            'time': 'الآن',
-          });
-        });
-        _scrollToBottom();
+    try {
+      if (_conversationId == null) {
+        await _setupConversation();
       }
-    });
+
+      if (_conversationId == null) return;
+
+      await ChatService.sendMessage(
+        conversationId: _conversationId!,
+        senderId: _currentUserId!,
+        senderRole: widget.currentUserRole,
+        receiverId: widget.receiverId,
+        receiverRole: widget.receiverRole,
+        text: text,
+      );
+    } catch (e) {
+      debugPrint('SEND MESSAGE ERROR: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل إرسال الرسالة: $e')),
+      );
+    }
   }
 
   Future<void> _pickImage() async {
     final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+
     if (image != null) {
       setState(() {
         _messages.add({
           'type': 'image',
-          'path': image.path, // Works with Image.network across Web
+          'path': image.path,
           'isMe': true,
           'time': 'الآن',
         });
       });
+
       _scrollToBottom();
     }
+  }
+
+  bool _isNetworkImage(String path) {
+    return path.startsWith('http://') || path.startsWith('https://');
   }
 
   @override
@@ -156,7 +225,7 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                widget.chatName,
+                widget.receiverName,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -204,18 +273,31 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
           Column(
             children: [
               Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 20,
-                  ),
-                  itemCount: _messages.length,
-                  itemBuilder: (context, index) {
-                    final message = _messages[index];
-                    return _buildMessageBubble(message);
-                  },
-                ),
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _messages.isEmpty
+                        ? const Center(
+                            child: Text(
+                              'لا توجد رسائل بعد',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 15,
+                              vertical: 20,
+                            ),
+                            itemCount: _messages.length,
+                            itemBuilder: (context, index) {
+                              final message = _messages[index];
+                              return _buildMessageBubble(message);
+                            },
+                          ),
               ),
               _buildMessageInput(),
             ],
@@ -226,12 +308,12 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
   }
 
   Widget _buildMessageBubble(Map<String, dynamic> message) {
-    bool isMe = message['isMe'];
+    final bool isMe = message['isMe'] ?? false;
     Widget messageContent;
 
     if (message['type'] == 'text') {
       messageContent = Text(
-        message['text'],
+        message['text'] ?? '',
         style: TextStyle(
           color: isMe ? const Color(0xFF051F20) : const Color(0xFF163832),
           fontSize: 16,
@@ -241,7 +323,10 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
       messageContent = ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 300, maxHeight: 250),
+          constraints: const BoxConstraints(
+            maxWidth: 300,
+            maxHeight: 250,
+          ),
           child: Image.network(
             message['path'],
             fit: BoxFit.contain,
@@ -251,22 +336,27 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
         ),
       );
     } else if (message['type'] == 'post') {
-      final plant = message['herb'];
+      final plant = Map<String, dynamic>.from(message['herb'] ?? {});
+
       messageContent = GestureDetector(
         onTap: () {
           showDialog(
             context: context,
             barrierColor: Colors.black54,
             builder: (context) => HerbPostDialog(
-              imageUrl: plant['imageUrl'],
-              name: plant['name'],
-              benefits: plant['benefits'],
-              howToUse: plant['howToUse'],
-              price: plant['price'],
+              herbId: plant['id'] ?? plant['_id'] ?? '',
+              imageUrl: plant['imageUrl'] ?? '',
+              name: plant['name'] ?? '',
+              benefits: plant['benefits'] ?? '',
+              howToUse: plant['howToUse'] ?? plant['usageMethod'] ?? '',
+              price: plant['price'].toString(),
+              storeName: plant['storeName'] ?? 'متجر غير معروف',
+              onSale: plant['onSale'] ?? false,
+              salePrice: plant['salePrice']?.toString(),
+              comments: plant['comments'] ?? [],
               isFavorite: plant['isFavorite'] ?? false,
               onFavoriteToggle: () {},
               onAddToCart: () {},
-              onShareTap: () {},
             ),
           );
         },
@@ -276,24 +366,38 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.9),
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: const Color(0xFF8EB69B), width: 1.5),
+            border: Border.all(
+              color: const Color(0xFF8EB69B),
+              width: 1.5,
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset(
-                  plant['imageUrl'],
-                  height: 120,
-                  width: double.infinity,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, _, _) => const Icon(Icons.eco, size: 50),
+              if ((plant['imageUrl'] ?? '').toString().isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: _isNetworkImage(plant['imageUrl'].toString())
+                      ? Image.network(
+                          plant['imageUrl'],
+                          height: 120,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.eco, size: 50),
+                        )
+                      : Image.asset(
+                          plant['imageUrl'],
+                          height: 120,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.eco, size: 50),
+                        ),
                 ),
-              ),
               const SizedBox(height: 8),
               Text(
-                'عشبة ${plant['name']}',
+                'عشبة ${plant['name'] ?? ''}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
@@ -302,7 +406,7 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
               ),
               const SizedBox(height: 5),
               Text(
-                plant['benefits'],
+                plant['benefits'] ?? '',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12, color: Colors.black87),
@@ -348,14 +452,13 @@ class _ChatDetailScreenState extends State<ChatDetailShopOwnerScreen> {
           ],
         ),
         child: Column(
-          crossAxisAlignment: isMe
-              ? CrossAxisAlignment.end
-              : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             messageContent,
             const SizedBox(height: 5),
             Text(
-              message['time'],
+              message['time'] ?? '',
               style: TextStyle(
                 color: isMe ? Colors.white70 : Colors.grey[500],
                 fontSize: 10,

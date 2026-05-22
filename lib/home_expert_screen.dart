@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/herb_service.dart';
+import 'services/user_service.dart';
 import 'models/herb_model.dart';
-
-// Import the new screens
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/chat_service.dart';
 import 'store_names_expert_screen.dart';
 import 'chat_expert_screen.dart';
 import 'chat_detail_expert_screen.dart';
@@ -29,6 +30,7 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
   int _selectedIndex = 2;
   int _selectedCategoryIndex = 0;
   String _searchQuery = '';
+  int _chatUnreadCount = 0;
 
   List<HerbModel> _herbs = [];
   bool _isLoadingHerbs = true;
@@ -49,7 +51,33 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
   void initState() {
     super.initState();
     fetchHerbs();
+  _loadChatUnreadCount();
   }
+
+  Future<void> _loadChatUnreadCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+
+      if (userId.isEmpty) return;
+
+      final conversations = await ChatService.getConversations(userId);
+
+      int total = 0;
+      for (final conv in conversations) {
+        total += (conv['unreadCount'] as num?)?.toInt() ?? 0;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _chatUnreadCount = total;
+      });
+    } catch (e) {
+      debugPrint('LOAD CHAT UNREAD ERROR: $e');
+    }
+  }
+
 
   Future<void> fetchHerbs() async {
     try {
@@ -100,6 +128,12 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
         'season': herb.season,
         'quantity': herb.quantity,
         'storeName': herb.storeName,
+        'comments': herb.comments,
+        'storeOwnerId': herb.storeOwnerId,
+        'onSale': herb.onSale,
+        'salePrice': herb.salePrice != null
+            ? '${herb.salePrice!.toStringAsFixed(0)} ₪'
+            : null,
       };
     }).toList();
   }
@@ -141,11 +175,34 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
       final existingIndex = _cartItems.indexWhere(
         (item) => item['name'] == plant['name'],
       );
+
+      final effectivePrice =
+          (plant['onSale'] == true && plant['salePrice'] != null)
+              ? plant['salePrice']
+              : plant['price'];
+
       if (existingIndex != -1) {
         _cartItems[existingIndex]['quantity'] += 1;
+        _cartItems[existingIndex]['price'] = effectivePrice;
+        _cartItems[existingIndex]['onSale'] = plant['onSale'] ?? false;
+        _cartItems[existingIndex]['salePrice'] = plant['salePrice'];
+        _cartItems[existingIndex]['originalPrice'] = plant['price'];
       } else {
-        _cartItems.add({...plant, 'quantity': 1});
-      }
+       _cartItems.add({
+            'id': plant['id'],
+            'name': plant['name'],
+            'price': effectivePrice,
+            'onSale': plant['onSale'] ?? false,
+            'salePrice': plant['salePrice'],
+            'originalPrice': plant['price'],
+            'imageUrl': plant['imageUrl'],
+            'quantity': 1,
+
+            'storeOwnerId': plant['storeOwnerId'],
+            'storeName': plant['storeName'],
+          });
+          }
+
       _selectedIndex = 4;
     });
   }
@@ -171,126 +228,199 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
   double get _cartTotal {
     double total = 0.0;
     for (var item in _cartItems) {
-      final priceStr = item['price'].toString().replaceAll(
-        RegExp(r'[^0-9.]'),
-        '',
-      );
+      final priceSource =
+          (item['onSale'] == true && item['salePrice'] != null)
+              ? item['salePrice']
+              : item['price'];
+
+      final priceStr = priceSource.toString().replaceAll(
+            RegExp(r'[^0-9.]'),
+            '',
+          );
+
       final price = double.tryParse(priceStr) ?? 0.0;
       total += price * (item['quantity'] as int);
     }
     return total;
   }
 
-  void _showShareDialog(BuildContext context, Map<String, dynamic> plant) {
-    final plantName = plant['name'];
-    final List<String> experts = [
-      'د. أحمد قاسم - خبير أعشاب',
-      'صيدلية الطبيعة - متجر',
-      'أ. فؤاد محمود - متخصص أدوية طبيعية',
-      'مزرعة الريحان - مزرعة خاصة',
-      'د. منى علي - خبيرة تغذية',
-    ];
+  Future<void> _showShareDialog(
+    BuildContext context,
+    Map<String, dynamic> plant,
+  ) async {
+    try {
+      final users = await UserService.getAllUsers();
+      String searchQuery = '';
 
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        String searchQuery = '';
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final filtered =
-                experts.where((e) => e.contains(searchQuery)).toList();
-            return AlertDialog(
-              backgroundColor: const Color(0xFFDAF1DE),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Text(
-                'إرسال $plantName إلى:',
-                style: const TextStyle(
-                  color: Color(0xFF163832),
-                  fontWeight: FontWeight.bold,
+      if (!context.mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (BuildContext ctx) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final filtered = users.where((user) {
+                final name = (user['fullName'] ??
+                        user['ownerName'] ??
+                        user['storeName'] ??
+                        user['email'] ??
+                        '')
+                    .toString();
+
+                return name.contains(searchQuery);
+              }).toList();
+
+              return AlertDialog(
+                backgroundColor: const Color(0xFFDAF1DE),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-              content: SizedBox(
-                width: 320,
-                height: 350,
-                child: Column(
-                  children: [
-                    TextField(
-                      onChanged: (val) {
-                        setDialogState(() {
-                          searchQuery = val;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'ابحث عن اسم الخبير أو المتجر...',
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: Color(0xFF163832),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFF8EB69B),
-                              child: Icon(Icons.person, color: Colors.white),
-                            ),
-                            title: Text(
-                              filtered[index],
-                              style: const TextStyle(
-                                color: Color(0xFF163832),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                CupertinoIcons.paperplane,
-                                color: Color(0xFF235347),
-                                size: 24,
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                final expertName = filtered[index];
-                                final chatName = expertName.contains('-')
-                                    ? expertName.split('-')[0].trim()
-                                    : expertName;
-                                ChatDetailExpertScreen.addSharedPost(
-                                  chatName,
-                                  plant,
-                                );
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'تم إرسال $plantName إلى $chatName بنجاح. ألق نظرة على المحادثات!',
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
+                title: Text(
+                  'إرسال ${plant['name']} إلى:',
+                  style: const TextStyle(
+                    color: Color(0xFF163832),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: SizedBox(
+                  width: 320,
+                  height: 350,
+                  child: Column(
+                    children: [
+                      TextField(
+                        onChanged: (val) {
+                          setDialogState(() {
+                            searchQuery = val;
+                          });
                         },
+                        decoration: InputDecoration(
+                          hintText: 'ابحث عن اسم المستخدم...',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 15),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final user = filtered[index];
+
+                            final name = user['fullName'] ??
+                                user['ownerName'] ??
+                                user['storeName'] ??
+                                user['email'] ??
+                                'مستخدم';
+
+                            final role = user['role'] == 'store_owner'
+                                ? 'صاحب متجر'
+                                : user['role'] == 'herbal_expert'
+                                    ? 'خبير'
+                                    : 'زبون';
+
+                            return ListTile(
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFF8EB69B),
+                                child: Icon(Icons.person, color: Colors.white),
+                              ),
+                              title: Text(
+                                '$name - $role',
+                                style: const TextStyle(
+                                  color: Color(0xFF163832),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(
+                                  CupertinoIcons.paperplane,
+                                  color: Color(0xFF235347),
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    Navigator.pop(ctx);
+
+                                    final prefs = await SharedPreferences.getInstance();
+                                    final currentUserId =
+                                        prefs.getString('userId') ?? '';
+
+                                    if (currentUserId.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'لم يتم العثور على المستخدم الحالي',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    final receiverId = user['_id'].toString();
+                                    final receiverName = name.toString();
+                                    final receiverRole = user['role'].toString();
+
+                                    final conversation =
+                                        await ChatService.createConversation(
+                                      user1Id: currentUserId,
+                                      user1Role: 'herbal_expert',
+                                      user2Id: receiverId,
+                                      user2Role: receiverRole,
+                                      chatName: receiverName,
+                                    );
+
+                                    await ChatService.sendMessage(
+                                      conversationId:
+                                          conversation['_id'].toString(),
+                                      senderId: currentUserId,
+                                      senderRole: 'herbal_expert',
+                                      receiverId: receiverId,
+                                      receiverRole: receiverRole,
+                                      text: 'تم إرسال عشبة ${plant['name']}',
+                                      type: 'post',
+                                      herb: plant,
+                                    );
+
+                                    await _loadChatUnreadCount();
+
+                                    if (!context.mounted) return;
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'تم إرسال ${plant['name']} إلى $receiverName',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('فشل إرسال العشبة: $e'),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل المستخدمين: $e')),
+      );
+    }
   }
 
   void _toggleFavorite(String herbId) {
@@ -341,8 +471,8 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
                   duration: const Duration(milliseconds: 300),
                   transitionBuilder:
                       (Widget child, Animation<double> animation) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
+                    return FadeTransition(opacity: animation, child: child);
+                  },
                   child: _buildCurrentBody(),
                 ),
                 _buildBottomNavigationBar(context),
@@ -357,9 +487,12 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
   Widget _buildCurrentBody() {
     switch (_selectedIndex) {
       case 0:
-        return const StoreNamesExpertScreen();
+        return StoreNamesExpertScreen();
       case 1:
-        return const ChatExpertScreen();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadChatUnreadCount();
+        });
+        return ChatExpertScreen(onUnreadChanged: _loadChatUnreadCount);
       case 2:
         return _buildHomeContent();
       case 3:
@@ -689,9 +822,7 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
 
   Widget _buildPlantHorizontalList() {
     if (_isLoadingHerbs) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_herbsError != null) {
@@ -745,13 +876,18 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
           alignment: WrapAlignment.center,
           children: _filteredPlants.map((plant) {
             return HerbCard(
+              herbId: plant['id'],
               imageUrl: plant['imageUrl'],
               name: plant['name'],
               benefits: plant['benefits'],
               howToUse: plant['howToUse'],
               price: plant['price'],
+              storeName: plant['storeName'],
+              comments: plant['comments'] ?? [],
               isFavorite: plant['isFavorite'],
               rating: plant['rating'] ?? 5,
+              onSale: plant['onSale'] ?? false,
+              salePrice: plant['salePrice'],
               onFavoriteToggle: () => _toggleFavorite(plant['id']),
               onAddToCart: () => _addToCart(plant),
               onRatingChanged: (newRating) {
@@ -799,8 +935,10 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
             _navIcon(
               icon: Icons.chat_bubble_outline,
               index: 1,
-              onTap: () {
+              badgeCount: _chatUnreadCount,
+              onTap: () async {
                 setState(() => _selectedIndex = 1);
+                await _loadChatUnreadCount();
               },
             ),
             _navIcon(
@@ -834,44 +972,79 @@ class _HomeExpertScreenState extends State<HomeExpertScreen> {
     required IconData icon,
     required int index,
     required VoidCallback onTap,
+    int badgeCount = 0,
   }) {
     final isSelected = _selectedIndex == index;
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          shape: BoxShape.circle,
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    spreadRadius: 2,
-                    blurRadius: 5,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected ? Colors.white : Colors.transparent,
+              shape: BoxShape.circle,
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        spreadRadius: 2,
+                        blurRadius: 5,
+                      ),
+                    ]
+                  : [],
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF235347),
+              size: 32,
+            ),
+          ),
+          if (badgeCount > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
                   ),
-                ]
-              : [],
-        ),
-        child: Icon(
-          icon,
-          color: const Color(0xFF235347),
-          size: 32,
-        ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
 class HerbCard extends StatefulWidget {
+  final String herbId;
   final String imageUrl;
   final String name;
   final String benefits;
   final String howToUse;
   final String price;
+  final String storeName;
+  final List<dynamic> comments;
   final bool isFavorite;
   final int rating;
+  final bool onSale;
+  final String? salePrice;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onAddToCart;
   final ValueChanged<int> onRatingChanged;
@@ -879,13 +1052,18 @@ class HerbCard extends StatefulWidget {
 
   const HerbCard({
     super.key,
+    required this.herbId,
     required this.imageUrl,
     required this.name,
     required this.benefits,
     required this.howToUse,
     required this.price,
+    required this.storeName,
+    required this.comments,
     required this.isFavorite,
     required this.rating,
+    this.onSale = false,
+    this.salePrice,
     required this.onFavoriteToggle,
     required this.onAddToCart,
     required this.onRatingChanged,
@@ -918,15 +1096,19 @@ class _HerbCardState extends State<HerbCard> {
               context: context,
               barrierColor: Colors.black54,
               builder: (context) => HerbPostDialog(
+                herbId: widget.herbId,
                 imageUrl: widget.imageUrl,
                 name: widget.name,
                 benefits: widget.benefits,
                 howToUse: widget.howToUse,
                 price: widget.price,
+                storeName: widget.storeName,
+                onSale: widget.onSale,
+                salePrice: widget.salePrice,
+                comments: widget.comments,
                 isFavorite: widget.isFavorite,
                 onFavoriteToggle: widget.onFavoriteToggle,
                 onAddToCart: widget.onAddToCart,
-                onShareTap: widget.onShareTap,
               ),
             );
           },
@@ -995,6 +1177,29 @@ class _HerbCardState extends State<HerbCard> {
                                 ),
                         ),
                       ),
+                      if (widget.onSale)
+                        Positioned(
+                          top: 15,
+                          right: 15,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'عرض خاص',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ),
                       Positioned(
                         top: 15,
                         left: 15,
@@ -1080,14 +1285,38 @@ class _HerbCardState extends State<HerbCard> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              widget.price,
-                              style: const TextStyle(
-                                color: Color(0xFF235347),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
+                            if (widget.onSale && widget.salePrice != null)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.price,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 14,
+                                      decoration: TextDecoration.lineThrough,
+                                    ),
+                                  ),
+                                  Text(
+                                    widget.salePrice!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                widget.price,
+                                style: const TextStyle(
+                                  color: Color(0xFF235347),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
                               ),
-                            ),
                             Row(
                               children: List.generate(5, (index) {
                                 return GestureDetector(

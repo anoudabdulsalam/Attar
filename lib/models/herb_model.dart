@@ -12,6 +12,9 @@ class HerbModel {
   final int quantity;
   final String storeOwnerId;
   final String storeName;
+  final bool onSale;
+  final double? salePrice;
+  final List<dynamic> comments;
 
   HerbModel({
     required this.id,
@@ -27,23 +30,29 @@ class HerbModel {
     required this.quantity,
     required this.storeOwnerId,
     required this.storeName,
+    required this.onSale,
+    required this.salePrice,
+    required this.comments,
   });
 
   factory HerbModel.fromJson(Map<String, dynamic> json) {
     return HerbModel(
-      id: json['_id'] ?? '',
-      name: json['name'] ?? '',
-      scientificName: json['scientificName'] ?? '',
-      description: json['description'] ?? '',
-      benefits: json['benefits'] ?? '',
-      usageMethod: json['usageMethod'] ?? '',
-      season: json['season'] ?? '',
-      category: json['category'] ?? '',
-      imageUrl: json['imageUrl'] ?? '',
-      price: (json['price'] ?? 0).toDouble(),
-      quantity: json['quantity'] ?? 0,
-      storeOwnerId: json['storeOwnerId'] ?? '',
-      storeName: json['storeName'] ?? '',
+      id: json['_id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      scientificName: json['scientificName']?.toString() ?? '',
+      description: json['description']?.toString() ?? '',
+      benefits: json['benefits']?.toString() ?? '',
+      usageMethod: json['usageMethod']?.toString() ?? '',
+      season: json['season']?.toString() ?? '',
+      category: json['category']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? '',
+      price: (json['price'] as num?)?.toDouble() ?? 0.0,
+      quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+      storeOwnerId: json['storeOwnerId']?.toString() ?? '',
+      storeName: json['storeName']?.toString() ?? '',
+      onSale: json['onSale'] ?? false,
+      salePrice: (json['salePrice'] as num?)?.toDouble(),
+      comments: json['comments'] ?? [],
     );
   }
 }

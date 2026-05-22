@@ -1,42 +1,135 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/order_service.dart';
 
 class OrdersShopOwnerScreen extends StatefulWidget {
-  final List<Map<String, dynamic>> orders;
-
-  const OrdersShopOwnerScreen({super.key, required this.orders});
+  const OrdersShopOwnerScreen({super.key});
 
   @override
   State<OrdersShopOwnerScreen> createState() => _OrdersShopOwnerScreenState();
 }
 
 class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
+  bool _isLoading = true;
+  String? _error;
+  List<dynamic> _orders = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrders();
+  }
+
+  Future<void> _loadOrders() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      final storeOwnerId = prefs.getString('userId') ?? '';
+
+      final orders = await OrderService.getOrdersByStoreOwner(storeOwnerId);
+
+      if (!mounted) return;
+
+      setState(() {
+        _orders = orders;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _updateStatus(String orderId, String status) async {
+    try {
+      await OrderService.updateOrderStatus(
+        orderId: orderId,
+        status: status,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تم تحديث حالة الطلب إلى $status')),
+      );
+
+      await _loadOrders();
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحديث الطلب: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         _buildTopAppBar(),
         Expanded(
-          child: widget.orders.isEmpty
-              ? const Center(
-                  child: Text(
-                    'لا يوجد طلبات حالياً',
-                    style: TextStyle(color: Colors.white, fontSize: 18),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(left: 20, right: 20, bottom: 90, top: 10),
-                  itemCount: widget.orders.length,
-                  itemBuilder: (context, index) {
-                    final order = widget.orders[index];
-                    return _buildOrderCard(order);
-                  },
-                ),
+          child: _buildBody(),
         ),
       ],
     );
   }
 
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Text(
+          'حدث خطأ أثناء تحميل الطلبات\n$_error',
+          textAlign: TextAlign.right,
+          style: const TextStyle(color: Colors.white, fontSize: 16),
+        ),
+      );
+    }
+
+    if (_orders.isEmpty) {
+      return const Center(
+        child: Text(
+          'لا يوجد طلبات حالياً',
+          textAlign: TextAlign.right,
+          style: TextStyle(color: Colors.white, fontSize: 18),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(
+          left: 20,
+          right: 20,
+          bottom: 90,
+          top: 10,
+        ),
+        itemCount: _orders.length,
+        itemBuilder: (context, index) {
+          final order = _orders[index];
+          return _buildOrderCard(order);
+        },
+      ),
+    );
+  }
+
   Widget _buildOrderCard(Map<String, dynamic> order) {
+    final items = (order['items'] ?? []) as List;
+    final status = order['status'] ?? 'قيد التحضير';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 15),
       padding: const EdgeInsets.all(15),
@@ -45,80 +138,124 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFF8EB69B), width: 1.5),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: Image.asset(
-              order['imageUrl'] ?? 'assets/images/plant_placeholder.png',
-              width: 80,
-              height: 80,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Icon(Icons.eco, size: 40),
+          Text(
+            'طلب رقم: ${order['_id'] ?? ''}',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Color(0xFF163832),
             ),
           ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'طلب: ${order['id']}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Color(0xFF163832),
-                  ),
-                ),
-                Text(
-                  'اسم الزبون: ${order['customerName']}',
-                  style: TextStyle(color: Colors.grey[800], fontSize: 14),
-                ),
-                Text(
-                  'العشبة: ${order['herbName']}',
-                  style: TextStyle(color: Colors.grey[800], fontSize: 14),
-                ),
-                Text(
-                  'الكمية: ${order['quantity']}',
-                  style: const TextStyle(
-                    color: Color(0xFF163832),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: order['status'],
-                  decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    filled: true,
-                    fillColor: const Color(0xFFDAF1DE),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'قيد التحضير', child: Text('قيد التحضير')),
-                    DropdownMenuItem(value: 'جاهز ومع شركة التوصيل', child: Text('جاهز ومع شركة التوصيل')),
-                  ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        order['status'] = val;
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('تم تحديث حالة الطلب إلى $val')),
-                      );
-                    }
-                  },
-                ),
-              ],
+          const SizedBox(height: 6),
+          Text(
+            'اسم المستخدم: ${order['buyerName'] ?? 'مستخدم'}',
+            textAlign: TextAlign.right,
+            style: TextStyle(color: Colors.grey[800], fontSize: 14),
+          ),
+          Text(
+            'نوع الحساب: ${_roleText(order['buyerRole'] ?? '')}',
+            textAlign: TextAlign.right,
+            style: TextStyle(color: Colors.grey[800], fontSize: 14),
+          ),
+          const SizedBox(height: 10),
+          const Divider(),
+          const Text(
+            'الأعشاب المطلوبة:',
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: Color(0xFF163832),
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
             ),
+          ),
+          const SizedBox(height: 8),
+
+          ...items.map((item) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDAF1DE),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                textDirection: TextDirection.rtl,
+                children: [
+                  const Icon(Icons.eco, color: Color(0xFF163832)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '${item['herbName'] ?? item['name'] ?? ''}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: Color(0xFF163832),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'الكمية: ${item['quantity'] ?? 1}',
+                    style: const TextStyle(color: Color(0xFF235347)),
+                  ),
+                ],
+              ),
+            );
+          }),
+
+          const SizedBox(height: 8),
+          Text(
+            'الإجمالي: ${(order['totalPrice'] ?? 0).toString()} ₪',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFF163832),
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          DropdownButtonFormField<String>(
+            initialValue: status,
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 0,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              filled: true,
+              fillColor: const Color(0xFFDAF1DE),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'قيد التحضير',
+                child: Text('قيد التحضير'),
+              ),
+              DropdownMenuItem(
+                value: 'جاهز ومع شركة التوصيل',
+                child: Text('جاهز ومع شركة التوصيل'),
+              ),
+            ],
+            onChanged: (val) {
+              if (val != null && val != status) {
+                _updateStatus(order['_id'], val);
+              }
+            },
           ),
         ],
       ),
     );
+  }
+
+  String _roleText(String role) {
+    if (role == 'herbal_expert') return 'خبير';
+    if (role == 'store_owner') return 'صاحب متجر';
+    return 'زبون';
   }
 
   Widget _buildTopAppBar() {
@@ -146,7 +283,11 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
           Builder(
             builder: (context) {
               return IconButton(
-                icon: const Icon(Icons.menu, color: Color(0xFF163832), size: 30),
+                icon: const Icon(
+                  Icons.menu,
+                  color: Color(0xFF163832),
+                  size: 30,
+                ),
                 onPressed: () {
                   Scaffold.of(context).openEndDrawer();
                 },

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/herb_service.dart';
 import 'services/cloudinary_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/user_service.dart';
 
 class AddHerbDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onAdd;
@@ -70,7 +72,11 @@ class _AddHerbDialogState extends State<AddHerbDialog> {
         uploadedImageUrl =
             await CloudinaryService.uploadImage(_pickedImage!) ?? '';
       }
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
 
+      final user = await UserService.getUserById(userId);
+      final storeName = user['storeName'] ?? 'متجر غير معروف';
       final herb = await HerbService.addHerb(
         name: _nameController.text.trim(),
         benefits: _benefitsController.text.trim(),
@@ -79,8 +85,8 @@ class _AddHerbDialogState extends State<AddHerbDialog> {
         quantity: int.tryParse(_quantityController.text.trim()) ?? 1,
         category: _mapCategoryToEnglish(_selectedCategory),
         imageUrl: uploadedImageUrl,
-        storeOwnerId: '6a01a9db8d5e7e2493634ff',
-        storeName: 'Attar Store',
+        storeOwnerId: userId,
+        storeName: storeName,
       );
 
       widget.onAdd({

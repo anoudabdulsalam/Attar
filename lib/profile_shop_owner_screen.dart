@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/user_service.dart';
 
 class ProfileShopOwnerScreen extends StatefulWidget {
   const ProfileShopOwnerScreen({super.key});
@@ -8,24 +10,102 @@ class ProfileShopOwnerScreen extends StatefulWidget {
 }
 
 class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
-  // Mock Data
-  final TextEditingController _ownerNameController = TextEditingController(
-    text: "أحمد محمد",
-  );
-  final TextEditingController _storeNameController = TextEditingController(
-    text: "صيدلية الطبيعة",
-  );
-  final TextEditingController _storeLocationController = TextEditingController(
-    text: "عمان، وسط البلد",
-  );
-  final TextEditingController _emailController = TextEditingController(
-    text: "ahmed@example.com",
-  );
+  final TextEditingController _ownerNameController = TextEditingController();
+  final TextEditingController _storeNameController = TextEditingController();
+  final TextEditingController _storeLocationController =
+      TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
 
   bool _isEditing = false;
+  bool _isLoading = true;
+  String? _userId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _ownerNameController.dispose();
+    _storeNameController.dispose();
+    _storeLocationController.dispose();
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _userId = prefs.getString('userId');
+
+      if (_userId == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final user = await UserService.getUserById(_userId!);
+
+      if (!mounted) return;
+
+      setState(() {
+        _ownerNameController.text = user['ownerName'] ?? '';
+        _storeNameController.text = user['storeName'] ?? '';
+        _storeLocationController.text = user['storeLocation'] ?? '';
+        _emailController.text = user['email'] ?? '';
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ أثناء تحميل البيانات: $e')),
+      );
+    }
+  }
+
+  Future<void> _saveUserData() async {
+    if (_userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لم يتم العثور على المستخدم')),
+      );
+      return;
+    }
+
+    try {
+      await UserService.updateUserById(_userId!, {
+        'ownerName': _ownerNameController.text.trim(),
+        'storeName': _storeNameController.text.trim(),
+        'storeLocation': _storeLocationController.text.trim(),
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم حفظ التغييرات بنجاح')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('حدث خطأ أثناء الحفظ: $e')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Column(
       key: const ValueKey('ProfileScreen'),
       children: [
@@ -55,7 +135,6 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                 ),
                 child: Column(
                   children: [
-                    // Logo & Avatar
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -65,7 +144,6 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                             horizontal: 10,
                             vertical: 5,
                           ),
-
                           child: Image.asset(
                             'assets/images/finalLogo.png',
                             fit: BoxFit.contain,
@@ -93,8 +171,11 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                     ),
                     const SizedBox(height: 40),
 
-                    // Editable Fields
-                    _buildProfileField('اسم المالك', _ownerNameController, Icons.person_outline),
+                    _buildProfileField(
+                      'اسم المالك',
+                      _ownerNameController,
+                      Icons.person_outline,
+                    ),
                     const SizedBox(height: 20),
                     _buildProfileField(
                       'اسم المتجر',
@@ -112,10 +193,10 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                       'البريد الإلكتروني',
                       _emailController,
                       Icons.email,
+                      enabled: false,
                     ),
                     const SizedBox(height: 40),
 
-                    // Save / Edit Toggle
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF163832),
@@ -127,16 +208,14 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                           borderRadius: BorderRadius.circular(30),
                         ),
                       ),
-                      onPressed: () {
+                      onPressed: () async {
+                        if (_isEditing) {
+                          await _saveUserData();
+                        }
+
+                        if (!mounted) return;
+
                         setState(() {
-                          if (_isEditing) {
-                            // Handle saving logic here
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('تم حفظ التغييرات بنجاح'),
-                              ),
-                            );
-                          }
                           _isEditing = !_isEditing;
                         });
                       },
@@ -176,9 +255,7 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Logo & Profile pic mock (we leave profile empty here as user requested it inside the page body)
-          const SizedBox(width: 40), // Spacer
-
+          const SizedBox(width: 40),
           const Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -187,12 +264,11 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF163832), // Dark text to contrast light bar
+                  color: Color(0xFF163832),
                 ),
               ),
             ],
           ),
-
           Builder(
             builder: (context) {
               return IconButton(
@@ -215,11 +291,14 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
   Widget _buildProfileField(
     String label,
     TextEditingController controller,
-    IconData icon,
-  ) {
+    IconData icon, {
+    bool enabled = true,
+  }) {
+    final canEdit = enabled && _isEditing;
+
     return TextField(
       controller: controller,
-      enabled: _isEditing,
+      enabled: canEdit,
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(
@@ -228,7 +307,7 @@ class _ProfileShopOwnerScreenState extends State<ProfileShopOwnerScreen> {
         ),
         prefixIcon: Icon(icon, color: const Color(0xFF163832)),
         filled: true,
-        fillColor: _isEditing ? Colors.white : Colors.white70,
+        fillColor: canEdit ? Colors.white : Colors.white70,
         disabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: const BorderSide(color: Colors.transparent),

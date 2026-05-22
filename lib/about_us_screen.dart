@@ -256,7 +256,7 @@ class _AboutUsScreenState extends State<AboutUsScreen> {
                                 ),
                                 const SizedBox(width: 80),
                                 _buildTeamMemberCard(
-                                  imageUrl: 'assets/images/Eman.jpg', 
+                                  imageUrl: 'assets/images/eman.jpeg', 
                                   name: 'إيمان العط',
                                   major: 'هندسة حاسوب',
                                 ),

@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
 import 'services/herb_service.dart';
+import 'services/user_service.dart';
 import 'models/herb_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/chat_service.dart';
 
-// Import the new screens
 import 'store_names_shop_owner_screen.dart';
 import 'chat_shop_owner_screen.dart';
 import 'chat_detail_shop_owner_screen.dart';
@@ -31,6 +34,8 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
   int _selectedIndex = 2;
   int _selectedCategoryIndex = 0;
   String _searchQuery = '';
+  int _chatUnreadCount = 0;
+  String? _currentShopOwnerId;
 
   List<HerbModel> _herbs = [];
   bool _isLoadingHerbs = true;
@@ -67,10 +72,50 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
 
   @override
   void initState() {
-    super.initState();
-    fetchHerbs();
+  super.initState();
+  _loadCurrentUser();
+  fetchHerbs();
+  _loadChatUnreadCount();
+}
+
+  Future<void> _loadChatUnreadCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+
+      if (userId.isEmpty) return;
+
+      final conversations = await ChatService.getConversations(userId);
+
+      int total = 0;
+      for (final conv in conversations) {
+        total += (conv['unreadCount'] as num?)?.toInt() ?? 0;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _chatUnreadCount = total;
+      });
+    } catch (e) {
+      debugPrint('LOAD CHAT UNREAD ERROR: $e');
+    }
   }
 
+Future<void> _loadCurrentUser() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  setState(() {
+    _currentShopOwnerId = prefs.getString('userId');
+  });
+}
+List<Map<String, dynamic>> get _myInventoryPlants {
+  if (_currentShopOwnerId == null) return [];
+
+  return _filteredPlants.where((plant) {
+    return plant['storeOwnerId'] == _currentShopOwnerId;
+  }).toList();
+}
   Future<void> fetchHerbs() async {
     try {
       setState(() {
@@ -120,6 +165,12 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
         'season': herb.season,
         'quantity': herb.quantity,
         'storeName': herb.storeName,
+        'comments': herb.comments,
+        'onSale': herb.onSale,
+        'storeOwnerId': herb.storeOwnerId,
+        'salePrice': herb.salePrice != null
+            ? '${herb.salePrice!.toStringAsFixed(0)} ₪'
+            : null,
       };
     }).toList();
   }
@@ -142,9 +193,7 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
 
     if (_selectedCategoryIndex != 0) {
       String selectedCat = _categories[_selectedCategoryIndex];
-      plants = plants
-          .where((plant) => plant['category'] == selectedCat)
-          .toList();
+      plants = plants.where((plant) => plant['category'] == selectedCat).toList();
     }
 
     if (_searchQuery.trim().isNotEmpty) {
@@ -163,117 +212,183 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
     });
   }
 
-  void _showShareDialog(BuildContext context, Map<String, dynamic> plant) {
-    String plantName = plant['name'];
-    final List<String> experts = [
-      'د. أحمد قاسم - خبير أعشاب',
-      'صيدلية الطبيعة - متجر',
-      'أ. فؤاد محمود - متخصص أدوية طبيعية',
-      'مزرعة الريحان - مزرعة خاصة',
-      'د. منى علي - خبيرة تغذية',
-    ];
+  Future<void> _showShareDialog(
+    BuildContext context,
+    Map<String, dynamic> plant,
+  ) async {
+    try {
+      final users = await UserService.getAllUsers();
+      String searchQuery = '';
 
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        String searchQuery = '';
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final filtered = experts
-                .where((e) => e.contains(searchQuery))
-                .toList();
-            return AlertDialog(
-              backgroundColor: const Color(0xFFDAF1DE),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Text(
-                'إرسال $plantName إلى:',
-                style: const TextStyle(
-                  color: Color(0xFF163832),
-                  fontWeight: FontWeight.bold,
+      if (!context.mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (BuildContext ctx) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final filtered = users.where((user) {
+                final name = (user['fullName'] ??
+                        user['ownerName'] ??
+                        user['storeName'] ??
+                        user['email'] ??
+                        '')
+                    .toString();
+
+                return name.contains(searchQuery);
+              }).toList();
+
+              return AlertDialog(
+                backgroundColor: const Color(0xFFDAF1DE),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-              content: SizedBox(
-                width: 320,
-                height: 350,
-                child: Column(
-                  children: [
-                    TextField(
-                      onChanged: (val) {
-                        setDialogState(() {
-                          searchQuery = val;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'ابحث عن اسم الخبير أو المتجر...',
-                        prefixIcon: const Icon(
-                          Icons.search,
-                          color: Color(0xFF163832),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          return ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFF8EB69B),
-                              child: Icon(Icons.person, color: Colors.white),
-                            ),
-                            title: Text(
-                              filtered[index],
-                              style: const TextStyle(
-                                color: Color(0xFF163832),
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                CupertinoIcons.paperplane,
-                                color: Color(0xFF235347),
-                                size: 24,
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                String expertName = filtered[index];
-                                String chatName = expertName.contains('-')
-                                    ? expertName.split('-')[0].trim()
-                                    : expertName;
-                                ChatDetailShopOwnerScreen.addSharedPost(
-                                  chatName,
-                                  plant,
-                                );
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'تم إرسال $plantName إلى $chatName بنجاح. ألق نظرة على المحادثات!',
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
+                title: Text(
+                  'إرسال ${plant['name']} إلى:',
+                  style: const TextStyle(
+                    color: Color(0xFF163832),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: SizedBox(
+                  width: 320,
+                  height: 350,
+                  child: Column(
+                    children: [
+                      TextField(
+                        onChanged: (val) {
+                          setDialogState(() {
+                            searchQuery = val;
+                          });
                         },
+                        decoration: InputDecoration(
+                          hintText: 'ابحث عن اسم المستخدم...',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 15),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final user = filtered[index];
+
+                            final name = user['fullName'] ??
+                                user['ownerName'] ??
+                                user['storeName'] ??
+                                user['email'] ??
+                                'مستخدم';
+
+                            final role = user['role'] == 'store_owner'
+                                ? 'صاحب متجر'
+                                : user['role'] == 'herbal_expert'
+                                    ? 'خبير'
+                                    : 'زبون';
+
+                            return ListTile(
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFF8EB69B),
+                                child: Icon(Icons.person, color: Colors.white),
+                              ),
+                              title: Text(
+                                '$name - $role',
+                                style: const TextStyle(
+                                  color: Color(0xFF163832),
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(
+                                  CupertinoIcons.paperplane,
+                                  color: Color(0xFF235347),
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    Navigator.pop(ctx);
+
+                                    final prefs = await SharedPreferences.getInstance();
+                                    final currentUserId =
+                                        prefs.getString('userId') ?? '';
+
+                                    if (currentUserId.isEmpty) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'لم يتم العثور على المستخدم الحالي',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
+
+                                    final receiverId = user['_id'].toString();
+                                    final receiverName = name.toString();
+                                    final receiverRole = user['role'].toString();
+
+                                    final conversation =
+                                        await ChatService.createConversation(
+                                      user1Id: currentUserId,
+                                      user1Role: 'store_owner',
+                                      user2Id: receiverId,
+                                      user2Role: receiverRole,
+                                      chatName: receiverName,
+                                    );
+
+                                    await ChatService.sendMessage(
+                                      conversationId:
+                                          conversation['_id'].toString(),
+                                      senderId: currentUserId,
+                                      senderRole: 'store_owner',
+                                      receiverId: receiverId,
+                                      receiverRole: receiverRole,
+                                      text: 'تم إرسال عشبة ${plant['name']}',
+                                      type: 'post',
+                                      herb: plant,
+                                    );
+
+                                    await _loadChatUnreadCount();
+
+                                    if (!context.mounted) return;
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'تم إرسال ${plant['name']} إلى $receiverName',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('فشل إرسال العشبة: $e'),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
-    );
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل المستخدمين: $e')),
+      );
+    }
   }
 
   @override
@@ -318,8 +433,8 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
                   duration: const Duration(milliseconds: 300),
                   transitionBuilder:
                       (Widget child, Animation<double> animation) {
-                        return FadeTransition(opacity: animation, child: child);
-                      },
+                    return FadeTransition(opacity: animation, child: child);
+                  },
                   child: _buildCurrentBody(),
                 ),
                 if (_selectedIndex == 2)
@@ -353,15 +468,18 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
   Widget _buildCurrentBody() {
     switch (_selectedIndex) {
       case 0:
-        return const StoreNamesShopOwnerScreen();
+        return StoreNamesShopOwnerScreen();
       case 1:
-        return const ChatShopOwnerScreen();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadChatUnreadCount();
+        });
+        return ChatShopOwnerScreen(onUnreadChanged: _loadChatUnreadCount);
       case 2:
         return _buildHomeContent();
       case 3:
         return const NotificationsShopOwnerScreen();
       case 4:
-        return OrdersShopOwnerScreen(orders: _mockOrders);
+          return const OrdersShopOwnerScreen();
       case 5:
         return const AboutUsHomeScreen();
       case 6:
@@ -403,9 +521,9 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
         return const ContactUsShopOwnerScreen();
       case 9:
         return InventoryShopOwnerScreen(
-          plants: _filteredPlants,
-          onInventoryChanged: () {
-            setState(() {});
+          plants: _myInventoryPlants,
+          onInventoryChanged: () async {
+            await fetchHerbs();
           },
         );
       default:
@@ -695,9 +813,7 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
 
   Widget _buildPlantHorizontalList() {
     if (_isLoadingHerbs) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_herbsError != null) {
@@ -751,11 +867,14 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
           alignment: WrapAlignment.center,
           children: _filteredPlants.map((plant) {
             return HerbCard(
+              herbId: plant['id'],
               imageUrl: plant['imageUrl'],
               name: plant['name'],
               benefits: plant['benefits'],
               howToUse: plant['howToUse'],
               price: plant['price'],
+              storeName: plant['storeName'],
+              comments: plant['comments'] ?? [],
               isFavorite: plant['isFavorite'],
               rating: plant['rating'] ?? 5,
               onSale: plant['onSale'] ?? false,
@@ -807,8 +926,10 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
             _navIcon(
               icon: Icons.chat_bubble_outline,
               index: 1,
-              onTap: () {
+              badgeCount: _chatUnreadCount,
+              onTap: () async {
                 setState(() => _selectedIndex = 1);
+                await _loadChatUnreadCount();
               },
             ),
             _navIcon(
@@ -849,42 +970,75 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
     required IconData icon,
     required int index,
     required VoidCallback onTap,
+    int badgeCount = 0,
   }) {
-    bool isSelected = _selectedIndex == index;
+    final isSelected = _selectedIndex == index;
+
     return GestureDetector(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          shape: BoxShape.circle,
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    spreadRadius: 2,
-                    blurRadius: 5,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected ? Colors.white : Colors.transparent,
+              shape: BoxShape.circle,
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        spreadRadius: 2,
+                        blurRadius: 5,
+                      ),
+                    ]
+                  : [],
+            ),
+            child: Icon(
+              icon,
+              color: const Color(0xFF235347),
+              size: 32,
+            ),
+          ),
+          if (badgeCount > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
                   ),
-                ]
-              : [],
-        ),
-        child: Icon(
-          icon,
-          color: const Color(0xFF235347),
-          size: 32,
-        ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
 class HerbCard extends StatefulWidget {
+  final String herbId;
   final String imageUrl;
   final String name;
   final String benefits;
   final String howToUse;
   final String price;
+  final String storeName;
+  final List<dynamic> comments;
   final bool isFavorite;
   final int rating;
   final bool onSale;
@@ -896,11 +1050,14 @@ class HerbCard extends StatefulWidget {
 
   const HerbCard({
     super.key,
+    required this.herbId,
     required this.imageUrl,
     required this.name,
     required this.benefits,
     required this.howToUse,
     required this.price,
+    required this.storeName,
+    required this.comments,
     required this.isFavorite,
     required this.rating,
     this.onSale = false,
@@ -937,15 +1094,19 @@ class _HerbCardState extends State<HerbCard> {
               context: context,
               barrierColor: Colors.black54,
               builder: (context) => HerbPostDialog(
+                herbId: widget.herbId,
                 imageUrl: widget.imageUrl,
                 name: widget.name,
                 benefits: widget.benefits,
                 howToUse: widget.howToUse,
                 price: widget.price,
+                storeName: widget.storeName,
+                onSale: widget.onSale,
+                salePrice: widget.salePrice,
+                comments: widget.comments,
                 isFavorite: widget.isFavorite,
                 onFavoriteToggle: widget.onFavoriteToggle,
                 onAddToCart: widget.onAddToCart,
-                onShareTap: widget.onShareTap,
               ),
             );
           },
@@ -1019,7 +1180,10 @@ class _HerbCardState extends State<HerbCard> {
                           top: 15,
                           right: 15,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.red,
                               borderRadius: BorderRadius.circular(12),
@@ -1188,20 +1352,9 @@ class _HerbCardState extends State<HerbCard> {
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          'إضافة للسلة',
-                          style: TextStyle(
-                            color: Color(0xFF051F20),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
+                        
                         SizedBox(width: 8),
-                        Icon(
-                          Icons.add_shopping_cart,
-                          color: Color(0xFF051F20),
-                          size: 22,
-                        ),
+                        
                       ],
                     ),
                   ),

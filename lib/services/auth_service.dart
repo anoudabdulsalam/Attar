@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_config.dart';
 
 class AuthService {
@@ -37,6 +38,9 @@ class AuthService {
     final data = jsonDecode(response.body);
 
     if (response.statusCode == 201) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userId', data['user']['id']);
+      await prefs.setString('role', data['user']['role']);
       return data;
     } else {
       throw Exception(data['message'] ?? 'Registration failed');
@@ -61,9 +65,18 @@ class AuthService {
     final data = jsonDecode(response.body);
 
     if (response.statusCode == 200) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('userId', data['user']['id']);
+      await prefs.setString('role', data['user']['role']);
       return data;
     } else {
       throw Exception(data['message'] ?? 'Login failed');
     }
+  }
+
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('userId');
+    await prefs.remove('role');
   }
 }

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'chat_detail_customer_screen.dart';
+import 'services/chat_service.dart';
 
 class ChatCustomerScreen extends StatefulWidget {
   const ChatCustomerScreen({super.key});
@@ -10,50 +13,100 @@ class ChatCustomerScreen extends StatefulWidget {
 
 class _ChatCustomerScreenState extends State<ChatCustomerScreen> {
   String searchQuery = '';
+  bool _isLoading = true;
+  String? _currentUserId;
+  List<dynamic> _conversations = [];
 
-  final List<Map<String, dynamic>> _chats = [
-    {
-      'id': '1',
-      'name': 'د. أحمد قاسم',
-      'lastMessage': 'أهلاً بك، كيف يمكنني مساعدتك؟',
-      'time': '10:30 ص',
-      'unread': 2,
-      'isStore': false,
-    },
-    {
-      'id': '2',
-      'name': 'صيدلية الطبيعة',
-      'lastMessage': 'تم استلام طلبك بنجاح',
-      'time': 'الأمس',
-      'unread': 0,
-      'isStore': true,
-    },
-    {
-      'id': '3',
-      'name': 'مزرعة الريحان',
-      'lastMessage': 'نعم، هذا المنتج متوفر حالياً',
-      'time': 'الإثنين',
-      'unread': 0,
-      'isStore': true,
-    },
-    {
-      'id': '4',
-      'name': 'د. منى علي',
-      'lastMessage': 'أنصحك باستخدام البابونج قبل النوم',
-      'time': 'الأسبوع الماضي',
-      'unread': 1,
-      'isStore': false,
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadConversations();
+  }
+
+  Future<void> _loadConversations() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _currentUserId = prefs.getString('userId') ?? '';
+
+      if (_currentUserId!.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final data = await ChatService.getConversations(_currentUserId!);
+
+      if (!mounted) return;
+
+      setState(() {
+        _conversations = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() => _isLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل المحادثات: $e')),
+      );
+    }
+  }
+
+  String _getOtherUserId(Map<String, dynamic> conversation) {
+    final participants = conversation['participants'] as List? ?? [];
+
+    final other = participants.firstWhere(
+      (p) => p['userId'].toString() != _currentUserId,
+      orElse: () => {},
+    );
+
+    return other['userId']?.toString() ?? '';
+  }
+
+  String _getOtherUserRole(Map<String, dynamic> conversation) {
+    final participants = conversation['participants'] as List? ?? [];
+
+    final other = participants.firstWhere(
+      (p) => p['userId'].toString() != _currentUserId,
+      orElse: () => {},
+    );
+
+    return other['role']?.toString() ?? 'herbal_expert';
+  }
+
+  String _roleName(String role) {
+    if (role == 'store_owner') return 'صاحب متجر';
+    if (role == 'herbal_expert') return 'خبير';
+    return 'زبون';
+  }
+
+  String _formatTime(dynamic value) {
+    if (value == null) return '';
+
+    try {
+      final date = DateTime.parse(value.toString()).toLocal();
+      final now = DateTime.now();
+
+      if (date.year == now.year &&
+          date.month == now.month &&
+          date.day == now.day) {
+        final hour = date.hour.toString().padLeft(2, '0');
+        final minute = date.minute.toString().padLeft(2, '0');
+        return '$hour:$minute';
+      }
+
+      return '${date.year}/${date.month}/${date.day}';
+    } catch (_) {
+      return '';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filteredChats = _chats
-        .where(
-          (chat) =>
-              chat['name'].toLowerCase().contains(searchQuery.toLowerCase()),
-        )
-        .toList();
+    final filteredConversations = _conversations.where((conversation) {
+      final name = (conversation['chatName'] ?? '').toString().toLowerCase();
+      return name.contains(searchQuery.toLowerCase());
+    }).toList();
 
     return Column(
       key: const ValueKey('ChatScreen'),
@@ -61,21 +114,28 @@ class _ChatCustomerScreenState extends State<ChatCustomerScreen> {
         _buildHeader(context, 'المحادثات'),
         _buildSearchBar(),
         Expanded(
-          child: filteredChats.isEmpty
-              ? const Center(
-                  child: Text(
-                    'لا توجد محادثات مطابقة',
-                    style: TextStyle(color: Colors.white70, fontSize: 18),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(top: 10, bottom: 90),
-                  itemCount: filteredChats.length,
-                  itemBuilder: (context, index) {
-                    final chat = filteredChats[index];
-                    return _buildChatTile(chat);
-                  },
-                ),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : filteredConversations.isEmpty
+                  ? const Center(
+                      child: Text(
+                        'لا توجد محادثات حالياً',
+                        style: TextStyle(color: Colors.white70, fontSize: 18),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadConversations,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.only(top: 10, bottom: 90),
+                        itemCount: filteredConversations.length,
+                        itemBuilder: (context, index) {
+                          final conversation =
+                              filteredConversations[index]
+                                  as Map<String, dynamic>;
+                          return _buildChatTile(conversation);
+                        },
+                      ),
+                    ),
         ),
       ],
     );
@@ -88,19 +148,10 @@ class _ChatCustomerScreenState extends State<ChatCustomerScreen> {
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.9),
           borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
         ),
         child: TextField(
           onChanged: (value) {
-            setState(() {
-              searchQuery = value;
-            });
+            setState(() => searchQuery = value);
           },
           decoration: const InputDecoration(
             hintText: 'ابحث عن خبير أو متجر...',
@@ -114,123 +165,95 @@ class _ChatCustomerScreenState extends State<ChatCustomerScreen> {
     );
   }
 
-  Widget _buildChatTile(Map<String, dynamic> chat) {
-    bool hasUnread = chat['unread'] > 0;
+  Widget _buildChatTile(Map<String, dynamic> conversation) {
+    final receiverId = _getOtherUserId(conversation);
+    final receiverRole = _getOtherUserRole(conversation);
+    final receiverName =
+        conversation['chatName']?.toString() ?? 'مستخدم غير معروف';
+
+    final unreadCount = conversation['unreadCount'] ?? 0;
+    final hasUnread = unreadCount > 0;
+    final isStore = receiverRole == 'store_owner';
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.85),
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            offset: const Offset(0, 4),
-            blurRadius: 10,
-          ),
-        ],
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.all(12),
-        onTap: () {
-          Navigator.push(
+       onTap: () async {
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => ChatDetailCustomerScreen(
-                chatName: chat['name'],
-                isStore: chat['isStore'],
+                receiverId: receiverId,
+                receiverName: receiverName,
+                receiverRole: receiverRole,
+                currentUserRole: 'customer',
+                isStore: isStore,
               ),
             ),
           );
+
+          await _loadConversations();
         },
-        leading: SizedBox(
-          width: 56,
-          height: 56,
-          child: Stack(
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: const Color(0xFF8EB69B),
-                child: Icon(
-                  chat['isStore'] ? Icons.store : Icons.person,
-                  color: Colors.white,
-                  size: 30,
-                ),
-              ),
-              if (chat['isStore'])
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF163832),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.verified,
-                      color: Colors.white,
-                      size: 12,
-                    ),
-                  ),
-                ),
-            ],
+        leading: CircleAvatar(
+          radius: 28,
+          backgroundColor: const Color(0xFF8EB69B),
+          child: Icon(
+            isStore ? Icons.store : Icons.person,
+            color: Colors.white,
+            size: 30,
           ),
         ),
         title: Text(
-          chat['name'],
+          '$receiverName - ${_roleName(receiverRole)}',
           style: TextStyle(
             fontWeight: hasUnread ? FontWeight.bold : FontWeight.w600,
             fontSize: 16,
             color: const Color(0xFF163832),
           ),
+          textAlign: TextAlign.right,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 5.0),
           child: Text(
-            chat['lastMessage'],
+            conversation['lastMessage']?.toString() ?? '',
             style: TextStyle(
               color: hasUnread ? const Color(0xFF163832) : Colors.grey[700],
-              fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
           ),
         ),
         trailing: SizedBox(
           width: 80,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                chat['time'],
-                style: TextStyle(
-                  color: hasUnread ? const Color(0xFF235347) : Colors.grey,
-                  fontSize: 12,
-                  fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal,
-                ),
+                _formatTime(conversation['lastMessageAt']),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
               if (hasUnread) ...[
                 const SizedBox(height: 5),
                 Container(
                   constraints: const BoxConstraints(
-                    minWidth: 20,
-                    minHeight: 20,
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
+                    minWidth: 22,
+                    minHeight: 22,
                   ),
                   alignment: Alignment.center,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFF5252),
-                    shape: BoxShape.rectangle,
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${chat['unread']}',
+                    '$unreadCount',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,

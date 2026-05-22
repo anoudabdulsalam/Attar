@@ -60,6 +60,12 @@ class FavoritesExpertScreen extends StatelessWidget {
                         onRatingChanged: (newRating) =>
                             onRatingChanged(plant['name'], newRating),
                         onShareTap: () => onShareTap(plant['name']),
+                        onSale: plant['onSale'] ?? false,
+                        salePrice: plant['salePrice'],
+                        storeName: plant['storeName'],
+                        comments: plant['comments'] ?? [],
+                        herbId: plant['id'],
+      
                       );
                     }).toList(),
                   ),

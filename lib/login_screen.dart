@@ -8,7 +8,7 @@ import 'signup_screen.dart';
 import 'home_customer_screen.dart';
 import 'home_shop_owner_screen.dart';
 import 'home_expert_screen.dart';
-
+import 'forgot_password_screen.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -180,16 +180,22 @@ if (role == 'customer') {
                             Align(
                               alignment: Alignment.centerLeft,
                               child: TextButton(
-                                onPressed: () {},
-                                child: const Text(
-                                  'نسيت كلمة المرور؟',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  FadePageRoute(page: const ForgotPasswordScreen()),
+                                );
+                              },
+                              child: const Text(
+                                'نسيت كلمة المرور؟',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ),
+                              ),
+                            
                             const SizedBox(height: 24),
                             ElevatedButton(
                               onPressed: isLoading ? null : loginUser,

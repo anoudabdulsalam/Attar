@@ -1,28 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/herb_service.dart';
+import 'services/user_service.dart';
 
 class HerbPostDialog extends StatefulWidget {
+  final String herbId;
   final String imageUrl;
   final String name;
   final String benefits;
   final String howToUse;
   final String price;
+  final String storeName;
+  final bool onSale;
+  final String? salePrice;
+  final List<dynamic> comments;
   final bool isFavorite;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onAddToCart;
-  final VoidCallback onShareTap;
 
   const HerbPostDialog({
     super.key,
+    required this.herbId,
     required this.imageUrl,
     required this.name,
     required this.benefits,
     required this.howToUse,
     required this.price,
+    required this.storeName,
+    required this.onSale,
+    this.salePrice,
+    required this.comments,
     required this.isFavorite,
     required this.onFavoriteToggle,
     required this.onAddToCart,
-    required this.onShareTap,
   });
 
   @override
@@ -31,26 +42,186 @@ class HerbPostDialog extends StatefulWidget {
 
 class _HerbPostDialogState extends State<HerbPostDialog> {
   final TextEditingController _commentController = TextEditingController();
-  final List<String> _comments = ['عشبة ممتازة جداً واستفدت منها كتير!'];
+  late List<dynamic> _comments;
   late bool _isFavoriteLocal;
+
+  String? _currentUserId;
+  String _currentUserName = 'مستخدم';
+  String _currentUserRole = 'customer';
 
   @override
   void initState() {
     super.initState();
+    _comments = List<dynamic>.from(widget.comments);
     _isFavoriteLocal = widget.isFavorite;
+    _loadCurrentUser();
+  }
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    _currentUserId = prefs.getString('userId');
+
+    if (_currentUserId == null) return;
+
+    final user = await UserService.getUserById(_currentUserId!);
+
+    if (!mounted) return;
+
+    setState(() {
+      _currentUserRole = user['role'] ?? 'customer';
+      _currentUserName =
+          user['fullName'] ??
+          user['ownerName'] ??
+          user['storeName'] ??
+          user['email'] ??
+          'مستخدم';
+    });
+  }
+
+  String _roleText(String role) {
+    if (role == 'store_owner') return 'صاحب متجر';
+    if (role == 'herbal_expert') return 'خبير أعشاب';
+    return 'زبون';
   }
 
   bool _isNetworkImage(String path) {
     return path.startsWith('http://') || path.startsWith('https://');
   }
 
-  void _addComment() {
-    if (_commentController.text.trim().isNotEmpty) {
+  Future<void> _addComment() async {
+    final text = _commentController.text.trim();
+
+    if (text.isEmpty || _currentUserId == null) return;
+
+    try {
+      final updatedHerb = await HerbService.addComment(
+        herbId: widget.herbId,
+        userId: _currentUserId!,
+        userName: _currentUserName,
+        userRole: _currentUserRole,
+        text: text,
+      );
+
+      if (!mounted) return;
+
       setState(() {
-        _comments.insert(0, _commentController.text.trim());
+        _comments = updatedHerb['comments'] ?? [];
       });
+
       _commentController.clear();
       FocusScope.of(context).unfocus();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل حفظ التعليق: $e')),
+      );
+    }
+  }
+
+  Future<void> _showShareDialog() async {
+    try {
+      final users = await UserService.getAllUsers();
+
+      if (!mounted) return;
+
+      showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: const Color(0xFFDAF1DE),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Container(
+              width: 420,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'إرسال المنشور إلى:',
+                    style: TextStyle(
+                      color: Color(0xFF163832),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 22,
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  TextField(
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن مستخدم...',
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: users.length,
+                      itemBuilder: (context, index) {
+                        final user = users[index];
+
+                        final name =
+                            user['fullName'] ??
+                            user['ownerName'] ??
+                            user['storeName'] ??
+                            user['email'] ??
+                            'مستخدم';
+
+                        final role = user['role'] ?? 'customer';
+
+                        return ListTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFF8EB69B),
+                            child: Icon(Icons.person, color: Colors.white),
+                          ),
+                          title: Text(
+                            '$name - ${_roleText(role)}',
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: Color(0xFF163832),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(
+                              CupertinoIcons.paperplane,
+                              color: Color(0xFF235347),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('تم إرسال المنشور إلى $name'),
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('فشل تحميل المستخدمين: $e')),
+      );
     }
   }
 
@@ -78,6 +249,60 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
     );
   }
 
+  Widget _buildPriceBadge() {
+    if (widget.onSale && widget.salePrice != null && widget.salePrice!.isNotEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFF163832).withOpacity(0.85),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          children: [
+            Text(
+              widget.price,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontWeight: FontWeight.bold,
+                decoration: TextDecoration.lineThrough,
+                decorationColor: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+             widget.salePrice!,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'عرض',
+              style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF163832).withOpacity(0.85),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        widget.price,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -93,10 +318,7 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
             children: [
               Container(
                 color: const Color(0xFFDAF1DE),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                 child: Row(
                   children: [
                     IconButton(
@@ -134,17 +356,19 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                             const SizedBox(width: 10),
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
+                              children: [
                                 Text(
-                                  'متجر الطبيعة والأعشاب',
-                                  style: TextStyle(
+                                  widget.storeName.isEmpty
+                                      ? 'متجر غير معروف'
+                                      : widget.storeName,
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                     color: Color(0xFF051F20),
                                   ),
                                 ),
-                                Text(
-                                  'منذ ساعتين',
+                                const Text(
+                                  'منذ قليل',
                                   style: TextStyle(
                                     color: Colors.grey,
                                     fontSize: 12,
@@ -177,6 +401,16 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                                 height: 1.5,
                               ),
                             ),
+                            if (widget.onSale) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'يوجد عرض خاص على هذه العشبة',
+                                style: TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -197,24 +431,7 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                           Positioned(
                             top: 15,
                             left: 15,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF163832).withOpacity(0.85),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                widget.price,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
+                            child: _buildPriceBadge(),
                           ),
                         ],
                       ),
@@ -266,7 +483,7 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                               ),
                             ),
                             TextButton.icon(
-                              onPressed: widget.onShareTap,
+                              onPressed: _showShareDialog,
                               icon: Icon(
                                 CupertinoIcons.paperplane,
                                 color: Colors.grey[700],
@@ -284,12 +501,12 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                         ),
                       ),
                       const Divider(),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
+                      const Padding(
+                        padding: EdgeInsets.symmetric(
                           horizontal: 15.0,
                           vertical: 5.0,
                         ),
-                        child: const Text(
+                        child: Text(
                           'التعليقات',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
@@ -303,6 +520,8 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: _comments.length,
                         itemBuilder: (context, index) {
+                          final comment = _comments[index];
+
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10.0),
                             child: ListTile(
@@ -323,16 +542,16 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
-                                      'مستخدم',
-                                      style: TextStyle(
+                                    Text(
+                                      '${comment['userName'] ?? 'مستخدم'} - ${_roleText(comment['userRole'] ?? 'customer')}',
+                                      style: const TextStyle(
                                         fontWeight: FontWeight.bold,
                                         fontSize: 14,
                                       ),
                                     ),
                                     const SizedBox(height: 5),
                                     Text(
-                                      _comments[index],
+                                      comment['text'] ?? '',
                                       style: const TextStyle(fontSize: 14),
                                     ),
                                   ],
@@ -348,10 +567,7 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 15,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 15),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
