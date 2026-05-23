@@ -31,6 +31,35 @@
 
   <title>attar</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Teachable Machine Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <script>
+    let tmModel;
+    async function loadTmModel() {
+      if (!tmModel) {
+        tmModel = await tmImage.load(
+          "assets/assets/models/herb_model/model.json",
+          "assets/assets/models/herb_model/metadata.json"
+        );
+      }
+    }
+    loadTmModel();
+
+    async function predictHerb(base64Image) {
+      await loadTmModel();
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = "data:image/png;base64," + base64Image;
+        img.onload = async () => {
+          const prediction = await tmModel.predict(img);
+          prediction.sort((a,b) => b.probability - a.probability);
+          resolve(prediction[0].className);
+        };
+      });
+    }
+  </script>
 </head>
 <body>
   <!--

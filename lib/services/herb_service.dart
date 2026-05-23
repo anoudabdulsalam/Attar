@@ -16,6 +16,19 @@ class HerbService {
     }
   }
 
+  static Future<Map<String, dynamic>> getHerbById(String herbId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs/$herbId');
+
+    final response = await http.get(url);
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data['herb'];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to fetch herb');
+    }
+  }
+
   static Future<Map<String, dynamic>> addComment({
   required String herbId,
   required String userId,
@@ -136,6 +149,31 @@ class HerbService {
 
     if (response.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to delete herb');
+    }
+  }
+
+  static Future<Map<String, dynamic>> rateHerb({
+    required String herbId,
+    required String userId,
+    required int rating,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs/$herbId/rate');
+
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': userId,
+        'rating': rating,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data['herb'];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to rate herb');
     }
   }
 }

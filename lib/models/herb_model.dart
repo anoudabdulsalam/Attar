@@ -15,6 +15,10 @@ class HerbModel {
   final bool onSale;
   final double? salePrice;
   final List<dynamic> comments;
+  final List<dynamic> ratings;
+  final int salesCount;
+  final String createdAt;
+  final String? saleUpdatedAt;
 
   HerbModel({
     required this.id,
@@ -33,6 +37,10 @@ class HerbModel {
     required this.onSale,
     required this.salePrice,
     required this.comments,
+    required this.ratings,
+    required this.salesCount,
+    required this.createdAt,
+    this.saleUpdatedAt,
   });
 
   factory HerbModel.fromJson(Map<String, dynamic> json) {
@@ -53,6 +61,10 @@ class HerbModel {
       onSale: json['onSale'] ?? false,
       salePrice: (json['salePrice'] as num?)?.toDouble(),
       comments: json['comments'] ?? [],
+      ratings: json['ratings'] ?? [],
+      salesCount: (json['salesCount'] as num?)?.toInt() ?? 0,
+      createdAt: json['createdAt']?.toString() ?? '',
+      saleUpdatedAt: json['saleUpdatedAt']?.toString(),
     );
   }
 }

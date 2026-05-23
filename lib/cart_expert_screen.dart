@@ -30,6 +30,32 @@ class _CartExpertScreenState extends State<CartExpertScreen> {
     return path.startsWith('http://') || path.startsWith('https://');
   }
 
+  DateTime? _getOrderDate(Map<String, dynamic> order) {
+    if (order['createdAt'] != null) {
+      try {
+        return DateTime.parse(order['createdAt']).toLocal();
+      } catch (_) {}
+    }
+    if (order['_id'] != null && order['_id'].toString().length == 24) {
+      try {
+        final hexString = order['_id'].toString().substring(0, 8);
+        final timestamp = int.parse(hexString, radix: 16);
+        return DateTime.fromMillisecondsSinceEpoch(timestamp * 1000).toLocal();
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String _formatDate(DateTime date) {
+    final localDate = date.toLocal();
+    final hour = localDate.hour == 0
+        ? 12
+        : (localDate.hour > 12 ? localDate.hour - 12 : localDate.hour);
+    final amPm = localDate.hour >= 12 ? 'م' : 'ص';
+    final minute = localDate.minute.toString().padLeft(2, '0');
+    return '${localDate.year}/${localDate.month}/${localDate.day} $hour:$minute $amPm';
+  }
+
   Future<bool> _createOrder() async {
   try {
     final prefs = await SharedPreferences.getInstance();
@@ -234,18 +260,11 @@ void _showTrackingDialog() {
                                   Row(
                                     textDirection: TextDirection.rtl,
                                     children: [
-                                      const CircleAvatar(
-                                        backgroundColor: Color(0xFF8EB69B),
-                                        child: Icon(
-                                          Icons.store,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment:
-                                              CrossAxisAlignment.end,
+                                              CrossAxisAlignment.start,
+                                          textDirection: TextDirection.rtl,
                                           children: [
                                             Text(
                                               'المتجر: ${order['storeName'] ?? 'متجر غير معروف'}',
@@ -265,7 +284,26 @@ void _showTrackingDialog() {
                                                 color: Colors.grey,
                                               ),
                                             ),
+                                            if (_getOrderDate(order) != null) ...[
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'التاريخ: ${_formatDate(_getOrderDate(order)!)}',
+                                                textAlign: TextAlign.right,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ],
                                           ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      const CircleAvatar(
+                                        backgroundColor: Color(0xFF8EB69B),
+                                        child: Icon(
+                                          Icons.store,
+                                          color: Colors.white,
                                         ),
                                       ),
                                     ],

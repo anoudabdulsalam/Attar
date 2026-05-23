@@ -55,6 +55,17 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
     _comments = List<dynamic>.from(widget.comments);
     _isFavoriteLocal = widget.isFavorite;
     _loadCurrentUser();
+    _fetchLatestHerbData();
+  }
+
+  Future<void> _fetchLatestHerbData() async {
+    try {
+      final herb = await HerbService.getHerbById(widget.herbId);
+      if (!mounted) return;
+      setState(() {
+        _comments = herb['comments'] ?? [];
+      });
+    } catch (_) {}
   }
 
   @override

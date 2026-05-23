@@ -48,4 +48,21 @@ static Future<List<dynamic>> getAllUsers() async {
     throw Exception(data['message'] ?? 'Failed to get users');
   }
 }
+
+  static Future<void> logInteraction(String userId, String herbId, String type) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/users/$userId/interact');
+
+    try {
+      await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'herbId': herbId,
+          'type': type,
+        }),
+      );
+    } catch (e) {
+      // Ignore errors for logging
+    }
+  }
 }

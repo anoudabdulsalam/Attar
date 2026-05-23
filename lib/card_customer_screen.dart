@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'delivery_location_screen.dart';
-import 'services/api_config.dart';
 
 class CardCustomerScreen extends StatefulWidget {
   final double totalPrice;
@@ -37,9 +34,7 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
   }) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const DeliveryLocationScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const DeliveryLocationScreen()),
     );
 
     if (result == null) return;
@@ -67,53 +62,19 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
       }
     }
 
-    try {
-      setState(() {
-        _isSubmitting = true;
-      });
+    setState(() {
+      _isSubmitting = true;
+    });
 
-      final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
+    await Future.delayed(const Duration(seconds: 1));
 
-      final body = {
-        'customerName': _nameController.text.trim().isEmpty
-            ? 'Customer'
-            : _nameController.text.trim(),
-        'items': [],
-        'totalPrice': widget.totalPrice,
-        'paymentMethod': isCashOnDelivery ? 'cash_on_delivery' : 'card',
-        'deliveryLocation': {
-          'lat': _deliveryLocation!['lat'],
-          'lng': _deliveryLocation!['lng'],
-        },
-        'status': 'pending',
-      };
+    if (!mounted) return;
 
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
+    setState(() {
+      _isSubmitting = false;
+    });
 
-      if (!mounted) return;
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        _processPayment(isCashOnDelivery: isCashOnDelivery);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('فشل حفظ الطلب: ${response.body}')),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('حدث خطأ أثناء حفظ الطلب: $e')),
-      );
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _isSubmitting = false;
-      });
-    }
+    _processPayment(isCashOnDelivery: isCashOnDelivery);
   }
 
   void _processPayment({bool isCashOnDelivery = false}) {
@@ -378,8 +339,11 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
                         maxLength: 16,
                       ),
                       const SizedBox(height: 15),
+
                       _buildTextField('اسم حامل البطاقة', _nameController),
+
                       const SizedBox(height: 15),
+
                       Row(
                         children: [
                           Expanded(
@@ -402,6 +366,7 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
                           ),
                         ],
                       ),
+
                       const SizedBox(height: 25),
 
                       if (_deliveryLocation != null)
@@ -431,8 +396,8 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
                         onPressed: _isSubmitting
                             ? null
                             : () => _pickDeliveryLocationAndPay(
-                                  isCashOnDelivery: false,
-                                ),
+                                isCashOnDelivery: false,
+                              ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8EB69B),
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -464,13 +429,15 @@ class _CardCustomerScreenState extends State<CardCustomerScreen> {
                                 ],
                               ),
                       ),
+
                       const SizedBox(height: 15),
+
                       OutlinedButton(
                         onPressed: _isSubmitting
                             ? null
                             : () => _pickDeliveryLocationAndPay(
-                                  isCashOnDelivery: true,
-                                ),
+                                isCashOnDelivery: true,
+                              ),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           side: const BorderSide(

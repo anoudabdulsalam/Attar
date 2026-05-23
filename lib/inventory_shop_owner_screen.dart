@@ -37,20 +37,21 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
       final prefs = await SharedPreferences.getInstance();
       final storeOwnerId = prefs.getString('userId') ?? '';
 
-      final orders =
-          await OrderService.getAllOrdersByStoreOwnerForReport(storeOwnerId);
-          final excel = ex.Excel.createExcel();
-          final sheet = excel['Inventory Report'];
+      final orders = await OrderService.getAllOrdersByStoreOwnerForReport(
+        storeOwnerId,
+      );
+      final excel = ex.Excel.createExcel();
+      final sheet = excel['Inventory Report'];
 
-          sheet.appendRow([
-            ex.TextCellValue('اسم العشبة'),
-            ex.TextCellValue('الكمية المتبقية'),
-            ex.TextCellValue('الكمية المباعة'),
-            ex.TextCellValue('أسماء المشترين'),
-            ex.TextCellValue('نوع الحساب'),
-            ex.TextCellValue('تواريخ البيع'),
-            ex.TextCellValue('إجمالي المبيعات'),
-          ]);
+      sheet.appendRow([
+        ex.TextCellValue('اسم العشبة'),
+        ex.TextCellValue('الكمية المتبقية'),
+        ex.TextCellValue('الكمية المباعة'),
+        ex.TextCellValue('أسماء المشترين'),
+        ex.TextCellValue('نوع الحساب'),
+        ex.TextCellValue('تواريخ البيع'),
+        ex.TextCellValue('إجمالي المبيعات'),
+      ]);
 
       for (final plant in widget.plants) {
         final herbId = plant['id']?.toString() ?? '';
@@ -77,9 +78,7 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
               final role = order['buyerRole']?.toString() ?? '';
               roles.add(role == 'herbal_expert' ? 'خبير' : 'زبون');
 
-              dates.add(
-                (order['createdAt'] ?? '').toString().split('T').first,
-              );
+              dates.add((order['createdAt'] ?? '').toString().split('T').first);
             }
           }
         }
@@ -98,10 +97,9 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
       final bytes = excel.encode();
       if (bytes == null) return;
 
-      final blob = html.Blob(
-        [bytes],
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      );
+      final blob = html.Blob([
+        bytes,
+      ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
       final url = html.Url.createObjectUrlFromBlob(blob);
 
@@ -119,9 +117,9 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل تنزيل ملف الإكسل: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تنزيل ملف الإكسل: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -205,10 +203,7 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.9),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF8EB69B),
-          width: 1.5,
-        ),
+        border: Border.all(color: const Color(0xFF8EB69B), width: 1.5),
       ),
       child: Row(
         textDirection: TextDirection.rtl,
@@ -219,22 +214,22 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
             child: imageUrl.isEmpty
                 ? const Icon(Icons.eco, size: 40)
                 : (_isNetworkImage(imageUrl)
-                    ? Image.network(
-                        imageUrl,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.eco, size: 40),
-                      )
-                    : Image.asset(
-                        imageUrl,
-                        width: 80,
-                        height: 80,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.eco, size: 40),
-                      )),
+                      ? Image.network(
+                          imageUrl,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.eco, size: 40),
+                        )
+                      : Image.asset(
+                          imageUrl,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) =>
+                              const Icon(Icons.eco, size: 40),
+                        )),
           ),
           const SizedBox(width: 15),
           Expanded(
@@ -256,10 +251,7 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(
-                        Icons.edit,
-                        color: Color(0xFF8EB69B),
-                      ),
+                      icon: const Icon(Icons.edit, color: Color(0xFF8EB69B)),
                       onPressed: () => _showEditDialog(plant, index),
                     ),
                     IconButton(
@@ -355,14 +347,14 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
       widget.onInventoryChanged();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تم حذف العشبة بنجاح')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('تم حذف العشبة بنجاح')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل حذف العشبة: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل حذف العشبة: $e')));
     }
   }
 
@@ -404,17 +396,9 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
               children: [
                 _buildTextField('الاسم', nameCtrl),
                 const SizedBox(height: 10),
-                _buildTextField(
-                  'السعر الأساسي (₪)',
-                  priceCtrl,
-                  isNumber: true,
-                ),
+                _buildTextField('السعر الأساسي (₪)', priceCtrl, isNumber: true),
                 const SizedBox(height: 10),
-                _buildTextField(
-                  'سعر العرض (₪)',
-                  salePriceCtrl,
-                  isNumber: true,
-                ),
+                _buildTextField('سعر العرض (₪)', salePriceCtrl, isNumber: true),
                 const SizedBox(height: 10),
                 _buildTextField('الفوائد', benefitsCtrl),
                 const SizedBox(height: 10),
@@ -451,9 +435,11 @@ class _InventoryShopOwnerScreenState extends State<InventoryShopOwnerScreen> {
                         '${updatedHerb['price'] ?? priceCtrl.text.trim()} ₪';
                     plant['benefits'] =
                         updatedHerb['benefits'] ?? benefitsCtrl.text.trim();
-                    plant['quantity'] = updatedHerb['quantity'] ??
+                    plant['quantity'] =
+                        updatedHerb['quantity'] ??
                         (int.tryParse(quantityCtrl.text.trim()) ?? 0);
-                    plant['onSale'] = updatedHerb['onSale'] ??
+                    plant['onSale'] =
+                        updatedHerb['onSale'] ??
                         salePriceCtrl.text.trim().isNotEmpty;
                     plant['salePrice'] = updatedHerb['salePrice'] != null
                         ? '${updatedHerb['salePrice']} ₪'

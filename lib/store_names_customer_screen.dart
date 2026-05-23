@@ -146,20 +146,22 @@ class _StoreNamesCustomerScreenState extends State<StoreNamesCustomerScreen> {
                 const SizedBox(width: 15),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        storeName,
-                        style: const TextStyle(
-                          color: Color(0xFF163832),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 20,
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          storeName,
+                          textAlign: TextAlign.left,
+                          style: const TextStyle(
+                            color: Color(0xFF163832),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 6),
-                      Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
+                      Text(
                         'صاحب المتجر: $ownerName',
                         textAlign: TextAlign.right,
                         style: const TextStyle(
@@ -168,11 +170,8 @@ class _StoreNamesCustomerScreenState extends State<StoreNamesCustomerScreen> {
                           fontSize: 16,
                         ),
                       ),
-                    ),
                       const SizedBox(height: 4),
-                      Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
+                      Text(
                         'الموقع: $location',
                         textAlign: TextAlign.right,
                         style: const TextStyle(
@@ -180,7 +179,6 @@ class _StoreNamesCustomerScreenState extends State<StoreNamesCustomerScreen> {
                           fontSize: 15,
                         ),
                       ),
-                    ),
                     ],
                   ),
                 ),
@@ -310,10 +308,11 @@ class StoreDialog extends StatelessWidget {
                 padding: const EdgeInsets.all(18),
                 color: const Color(0xFFF0F5F1),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'صاحب المتجر: $ownerName',
+                      textAlign: TextAlign.right,
                       style: const TextStyle(
                         color: Color(0xFF163832),
                         fontWeight: FontWeight.bold,
@@ -323,6 +322,7 @@ class StoreDialog extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(
                       'الموقع: $location',
+                      textAlign: TextAlign.right,
                       style: const TextStyle(
                         color: Color(0xFF235347),
                         fontSize: 15,

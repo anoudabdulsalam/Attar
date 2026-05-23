@@ -113,9 +113,9 @@ class _AddHerbDialogState extends State<AddHerbDialog> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشلت الإضافة: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشلت الإضافة: $e')));
     } finally {
       if (!mounted) return;
 
@@ -143,10 +143,7 @@ class _AddHerbDialogState extends State<AddHerbDialog> {
       insetPadding: const EdgeInsets.all(20),
       title: const Text(
         'إضافة عشبة جديدة',
-        style: TextStyle(
-          color: Color(0xFF163832),
-          fontWeight: FontWeight.bold,
-        ),
+        style: TextStyle(color: Color(0xFF163832), fontWeight: FontWeight.bold),
         textAlign: TextAlign.center,
       ),
       content: SizedBox(

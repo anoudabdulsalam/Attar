@@ -14,6 +14,32 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
   String? _error;
   List<dynamic> _orders = [];
 
+  DateTime? _getOrderDate(Map<String, dynamic> order) {
+    if (order['createdAt'] != null) {
+      try {
+        return DateTime.parse(order['createdAt']).toLocal();
+      } catch (_) {}
+    }
+    if (order['_id'] != null && order['_id'].toString().length == 24) {
+      try {
+        final hexString = order['_id'].toString().substring(0, 8);
+        final timestamp = int.parse(hexString, radix: 16);
+        return DateTime.fromMillisecondsSinceEpoch(timestamp * 1000).toLocal();
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  String _formatDate(DateTime date) {
+    final localDate = date.toLocal();
+    final hour = localDate.hour == 0
+        ? 12
+        : (localDate.hour > 12 ? localDate.hour - 12 : localDate.hour);
+    final amPm = localDate.hour >= 12 ? 'م' : 'ص';
+    final minute = localDate.minute.toString().padLeft(2, '0');
+    return '${localDate.year}/${localDate.month}/${localDate.day} $hour:$minute $amPm';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -139,7 +165,8 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
         border: Border.all(color: const Color(0xFF8EB69B), width: 1.5),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        textDirection: TextDirection.rtl,
         children: [
           Text(
             'طلب رقم: ${order['_id'] ?? ''}',
@@ -150,6 +177,14 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
               color: Color(0xFF163832),
             ),
           ),
+          if (_getOrderDate(order) != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'التاريخ: ${_formatDate(_getOrderDate(order)!)}',
+              textAlign: TextAlign.right,
+              style: TextStyle(color: Colors.grey[800], fontSize: 14),
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
             'اسم المستخدم: ${order['buyerName'] ?? 'مستخدم'}',

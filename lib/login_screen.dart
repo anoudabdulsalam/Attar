@@ -9,7 +9,7 @@ import 'home_customer_screen.dart';
 import 'home_shop_owner_screen.dart';
 import 'home_expert_screen.dart';
 import 'forgot_password_screen.dart';
-
+import 'admin_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +20,8 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool isLoading = false;
-
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
   final TextEditingController emailController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
@@ -59,29 +60,29 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final user = result['user'];
-final role = user?['role'];
+      final role = user?['role'];
 
-if (role == 'customer') {
-  Navigator.pushReplacement(
-    context,
-    FadePageRoute(page: const HomeCustomerScreen()),
-  );
-} else if (role == 'store_owner') {
-  Navigator.pushReplacement(
-    context,
-    FadePageRoute(page: const HomeShopOwnerScreen()),
-  );
-} else if (role == 'herbal_expert') {
-  Navigator.pushReplacement(
-    context,
-    FadePageRoute(page: const HomeExpertScreen()),
-  );
-} else {
-  Navigator.pushReplacement(
-    context,
-    FadePageRoute(page: const MainScreen()),
-  );
-}
+      if (role == 'customer') {
+        Navigator.pushReplacement(
+          context,
+          FadePageRoute(page: const HomeCustomerScreen()),
+        );
+      } else if (role == 'store_owner') {
+        Navigator.pushReplacement(
+          context,
+          FadePageRoute(page: const HomeShopOwnerScreen()),
+        );
+      } else if (role == 'herbal_expert') {
+        Navigator.pushReplacement(
+          context,
+          FadePageRoute(page: const HomeExpertScreen()),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          FadePageRoute(page: const MainScreen()),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
 
@@ -180,22 +181,24 @@ if (role == 'customer') {
                             Align(
                               alignment: Alignment.centerLeft,
                               child: TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  FadePageRoute(page: const ForgotPasswordScreen()),
-                                );
-                              },
-                              child: const Text(
-                                'نسيت كلمة المرور؟',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    FadePageRoute(
+                                      page: const ForgotPasswordScreen(),
+                                    ),
+                                  );
+                                },
+                                child: const Text(
+                                  'نسيت كلمة المرور؟',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
                             ),
-                              ),
-                            
+
                             const SizedBox(height: 24),
                             ElevatedButton(
                               onPressed: isLoading ? null : loginUser,
@@ -227,64 +230,41 @@ if (role == 'customer') {
                                     ),
                             ),
                             const SizedBox(height: 24),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Divider(
+                            TextButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  FadePageRoute(page: const AdminLoginScreen()),
+                                );
+                              },
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(15),
+                                  side: BorderSide(
                                     color: Colors.white.withOpacity(0.5),
-                                    thickness: 1,
                                   ),
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                  ),
-                                  child: Text(
-                                    'أو المتابعة باستخدام',
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Divider(
-                                    color: Colors.white.withOpacity(0.5),
-                                    thickness: 1,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            Center(
-                              child: InkWell(
-                                onTap: () {},
-                                borderRadius: BorderRadius.circular(30),
-                                child: Container(
-                                  width: 60,
-                                  height: 60,
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.admin_panel_settings,
                                     color: Colors.white,
                                   ),
-                                  child: Center(
-                                    child: Image.asset(
-                                      'assets/images/google_logo.png',
-                                      height: 35,
-                                      width: 35,
-                                      errorBuilder:
-                                          (context, error, stackTrace) =>
-                                              const Text(
-                                                'G',
-                                                style: TextStyle(
-                                                  fontSize: 30,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blue,
-                                                ),
-                                              ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'المتابعة كمسؤول',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
                                     ),
                                   ),
-                                ),
+                                ],
                               ),
                             ),
                             const SizedBox(height: 24),
@@ -325,7 +305,7 @@ if (role == 'customer') {
   }) {
     return TextFormField(
       controller: controller,
-      obscureText: isPassword,
+      obscureText: isPassword ? !_isPasswordVisible : false,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
@@ -344,6 +324,19 @@ if (role == 'customer') {
           borderRadius: BorderRadius.circular(15),
           borderSide: const BorderSide(color: Colors.white, width: 2),
         ),
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.white70,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _isPasswordVisible = !_isPasswordVisible;
+                  });
+                },
+              )
+            : null,
       ),
     );
   }

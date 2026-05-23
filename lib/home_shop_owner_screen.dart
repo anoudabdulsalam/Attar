@@ -2,16 +2,16 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
+import 'herb_predictor.dart';
 import 'services/herb_service.dart';
 import 'services/user_service.dart';
 import 'models/herb_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'services/chat_service.dart';
-
+import 'services/favorite_service.dart';
 import 'store_names_shop_owner_screen.dart';
 import 'chat_shop_owner_screen.dart';
-import 'chat_detail_shop_owner_screen.dart';
 import 'notifications_shop_owner_screen.dart';
 import 'orders_shop_owner_screen.dart';
 import 'inventory_shop_owner_screen.dart';
@@ -72,11 +72,53 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
 
   @override
   void initState() {
-  super.initState();
-  _loadCurrentUser();
-  fetchHerbs();
-  _loadChatUnreadCount();
-}
+    super.initState();
+    _loadCurrentUser();
+    _loadUserPreferences();
+    fetchHerbs();
+    _loadChatUnreadCount();
+  }
+
+  List<dynamic> _herbPreferences = [];
+  String _currentUserId = '';
+  Future<void> _loadFavorites() async {
+    if (_currentUserId.isEmpty) return;
+
+    try {
+      final favorites = await FavoriteService.getFavorites(_currentUserId);
+
+      final Map<String, bool> loadedFavorites = {};
+
+      for (final fav in favorites) {
+        loadedFavorites[fav['herbId'].toString()] = true;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _favoriteStatus.addAll(loadedFavorites);
+      });
+    } catch (e) {
+      debugPrint('LOAD FAVORITES ERROR: $e');
+    }
+  }
+
+  Future<void> _loadUserPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('userId') ?? '';
+    _currentUserId = userId;
+
+    if (userId.isEmpty) return;
+    await _loadFavorites();
+    try {
+      final user = await UserService.getUserById(userId);
+      if (mounted) {
+        setState(() {
+          _herbPreferences = user['herbPreferences'] ?? [];
+        });
+      }
+    } catch (_) {}
+  }
 
   Future<void> _loadChatUnreadCount() async {
     try {
@@ -102,20 +144,22 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
     }
   }
 
-Future<void> _loadCurrentUser() async {
-  final prefs = await SharedPreferences.getInstance();
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
 
-  setState(() {
-    _currentShopOwnerId = prefs.getString('userId');
-  });
-}
-List<Map<String, dynamic>> get _myInventoryPlants {
-  if (_currentShopOwnerId == null) return [];
+    setState(() {
+      _currentShopOwnerId = prefs.getString('userId');
+    });
+  }
 
-  return _filteredPlants.where((plant) {
-    return plant['storeOwnerId'] == _currentShopOwnerId;
-  }).toList();
-}
+  List<Map<String, dynamic>> get _myInventoryPlants {
+    if (_currentShopOwnerId == null) return [];
+
+    return _apiPlants.where((plant) {
+      return plant['storeOwnerId'] == _currentShopOwnerId;
+    }).toList();
+  }
+
   Future<void> fetchHerbs() async {
     try {
       setState(() {
@@ -126,11 +170,26 @@ List<Map<String, dynamic>> get _myInventoryPlants {
       final data = await HerbService.getAllHerbs();
       final herbs = data.map((item) => HerbModel.fromJson(item)).toList();
 
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+
       if (!mounted) return;
 
       setState(() {
         _herbs = herbs;
         _isLoadingHerbs = false;
+
+        if (userId.isNotEmpty) {
+          for (var herb in _herbs) {
+            final userRating = herb.ratings.firstWhere(
+              (r) => (r is Map && r['userId'] == userId),
+              orElse: () => null,
+            );
+            if (userRating != null) {
+              _ratings[herb.id] = (userRating['rating'] as num).toInt();
+            }
+          }
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -150,16 +209,13 @@ List<Map<String, dynamic>> get _myInventoryPlants {
             ? herb.imageUrl
             : 'assets/images/finalLogo.png',
         'name': herb.name,
-        'benefits': herb.benefits.isNotEmpty
-            ? herb.benefits
-            : herb.description,
-        'howToUse': herb.usageMethod.isNotEmpty
-            ? herb.usageMethod
-            : 'غير محدد',
+        'benefits': herb.benefits.isNotEmpty ? herb.benefits : herb.description,
+        'howToUse': herb.usageMethod.isNotEmpty ? herb.usageMethod : 'غير محدد',
         'price': '${herb.price.toStringAsFixed(0)} ₪',
         'category': _mapCategoryToArabic(herb.category),
         'isFavorite': _favoriteStatus[herb.id] ?? false,
-        'rating': _ratings[herb.id] ?? 5,
+        'rating':
+            _ratings[herb.id] ?? _calculateAverageRating(herb.ratings ?? []),
         'description': herb.description,
         'scientificName': herb.scientificName,
         'season': herb.season,
@@ -168,9 +224,13 @@ List<Map<String, dynamic>> get _myInventoryPlants {
         'comments': herb.comments,
         'onSale': herb.onSale,
         'storeOwnerId': herb.storeOwnerId,
+        'createdAt': herb.createdAt,
+        'salesCount': herb.salesCount,
+        'ratings': herb.ratings,
         'salePrice': herb.salePrice != null
             ? '${herb.salePrice!.toStringAsFixed(0)} ₪'
             : null,
+        'saleUpdatedAt': herb.saleUpdatedAt,
       };
     }).toList();
   }
@@ -188,12 +248,67 @@ List<Map<String, dynamic>> get _myInventoryPlants {
     return category.isEmpty ? 'أعشاب طبية' : category;
   }
 
+  int _calculateAverageRating(List<dynamic>? ratings) {
+    if (ratings == null || ratings.isEmpty) return 1;
+    double sum = 0;
+    for (var r in ratings) {
+      sum += (r is Map ? r['rating'] : r) ?? 0;
+    }
+    return (sum / ratings.length).round();
+  }
+
+  int _getHerbScore(Map<String, dynamic> plant) {
+    int score = 0;
+
+    score += (plant['salesCount'] ?? 0) as int;
+
+    final avgRating = _calculateAverageRating(plant['ratings']);
+    score += avgRating * 10;
+
+    final favoritePlants = _apiPlants
+        .where((p) => _favoriteStatus[p['id']] == true)
+        .toList();
+
+    for (final fav in favoritePlants) {
+      if (plant['id'] == fav['id']) continue;
+
+      if (plant['category'] == fav['category']) {
+        score += 120;
+      }
+
+      final plantBenefits = plant['benefits'].toString();
+      final favBenefits = fav['benefits'].toString();
+
+      for (final word in favBenefits.split(' ')) {
+        if (word.length > 2 && plantBenefits.contains(word)) {
+          score += 15;
+        }
+      }
+    }
+
+    return score;
+  }
+
+  int _getUserPreferenceScore(String herbId) {
+    if (_herbPreferences.isEmpty) return 0;
+    final pref = _herbPreferences.firstWhere(
+      (p) => p['herbId'] == herbId,
+      orElse: () => null,
+    );
+    if (pref != null) {
+      return (pref['score'] ?? 0) as int;
+    }
+    return 0;
+  }
+
   List<Map<String, dynamic>> get _filteredPlants {
-    List<Map<String, dynamic>> plants = _apiPlants;
+    List<Map<String, dynamic>> plants = List.from(_apiPlants);
 
     if (_selectedCategoryIndex != 0) {
       String selectedCat = _categories[_selectedCategoryIndex];
-      plants = plants.where((plant) => plant['category'] == selectedCat).toList();
+      plants = plants
+          .where((plant) => plant['category'] == selectedCat)
+          .toList();
     }
 
     if (_searchQuery.trim().isNotEmpty) {
@@ -203,13 +318,80 @@ List<Map<String, dynamic>> get _myInventoryPlants {
       }).toList();
     }
 
+    plants.sort((a, b) {
+      bool isARecentSale =
+          a['onSale'] == true &&
+          a['saleUpdatedAt'] != null &&
+          DateTime.now()
+                  .toUtc()
+                  .difference(
+                    DateTime.tryParse(a['saleUpdatedAt']) ?? DateTime(1970),
+                  )
+                  .inHours <
+              1;
+      bool isBRecentSale =
+          b['onSale'] == true &&
+          b['saleUpdatedAt'] != null &&
+          DateTime.now()
+                  .toUtc()
+                  .difference(
+                    DateTime.tryParse(b['saleUpdatedAt']) ?? DateTime(1970),
+                  )
+                  .inHours <
+              1;
+
+      if (isARecentSale && !isBRecentSale) return -1;
+      if (!isARecentSale && isBRecentSale) return 1;
+
+      DateTime timeA =
+          DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime(1970);
+      DateTime timeB =
+          DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime(1970);
+      bool isANew = DateTime.now().toUtc().difference(timeA).inHours < 1;
+      bool isBNew = DateTime.now().toUtc().difference(timeB).inHours < 1;
+
+      if (isANew && !isBNew) return -1;
+      if (!isANew && isBNew) return 1;
+
+      int prefA = _getUserPreferenceScore(a['id']);
+      int prefB = _getUserPreferenceScore(b['id']);
+      if (prefA != prefB) return prefB.compareTo(prefA);
+
+      int scoreA = _getHerbScore(a);
+      int scoreB = _getHerbScore(b);
+      return scoreB.compareTo(scoreA);
+    });
+
     return plants;
   }
 
-  void _toggleFavorite(String herbId) {
+  Future<void> _toggleFavorite(String herbId) async {
+    if (_currentUserId.isEmpty) return;
+
+    final currentStatus = _favoriteStatus[herbId] ?? false;
+
     setState(() {
-      _favoriteStatus[herbId] = !(_favoriteStatus[herbId] ?? false);
+      _favoriteStatus[herbId] = !currentStatus;
     });
+
+    try {
+      if (!currentStatus) {
+        await FavoriteService.addFavorite(_currentUserId, herbId);
+      } else {
+        final favorites = await FavoriteService.getFavorites(_currentUserId);
+
+        final favorite = favorites.firstWhere(
+          (f) => f['herbId'].toString() == herbId,
+          orElse: () => null,
+        );
+
+        if (favorite != null) {
+          await FavoriteService.removeFavorite(_currentUserId, herbId);
+        }
+      }
+    } catch (e) {
+      debugPrint('FAVORITE ERROR: $e');
+    }
   }
 
   Future<void> _showShareDialog(
@@ -228,12 +410,13 @@ List<Map<String, dynamic>> get _myInventoryPlants {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               final filtered = users.where((user) {
-                final name = (user['fullName'] ??
-                        user['ownerName'] ??
-                        user['storeName'] ??
-                        user['email'] ??
-                        '')
-                    .toString();
+                final name =
+                    (user['fullName'] ??
+                            user['ownerName'] ??
+                            user['storeName'] ??
+                            user['email'] ??
+                            '')
+                        .toString();
 
                 return name.contains(searchQuery);
               }).toList();
@@ -279,7 +462,8 @@ List<Map<String, dynamic>> get _myInventoryPlants {
                           itemBuilder: (context, index) {
                             final user = filtered[index];
 
-                            final name = user['fullName'] ??
+                            final name =
+                                user['fullName'] ??
                                 user['ownerName'] ??
                                 user['storeName'] ??
                                 user['email'] ??
@@ -288,8 +472,8 @@ List<Map<String, dynamic>> get _myInventoryPlants {
                             final role = user['role'] == 'store_owner'
                                 ? 'صاحب متجر'
                                 : user['role'] == 'herbal_expert'
-                                    ? 'خبير'
-                                    : 'زبون';
+                                ? 'خبير'
+                                : 'زبون';
 
                             return ListTile(
                               leading: const CircleAvatar(
@@ -312,12 +496,15 @@ List<Map<String, dynamic>> get _myInventoryPlants {
                                   try {
                                     Navigator.pop(ctx);
 
-                                    final prefs = await SharedPreferences.getInstance();
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
                                     final currentUserId =
                                         prefs.getString('userId') ?? '';
 
                                     if (currentUserId.isEmpty) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
                                         const SnackBar(
                                           content: Text(
                                             'لم يتم العثور على المستخدم الحالي',
@@ -329,20 +516,21 @@ List<Map<String, dynamic>> get _myInventoryPlants {
 
                                     final receiverId = user['_id'].toString();
                                     final receiverName = name.toString();
-                                    final receiverRole = user['role'].toString();
+                                    final receiverRole = user['role']
+                                        .toString();
 
                                     final conversation =
                                         await ChatService.createConversation(
-                                      user1Id: currentUserId,
-                                      user1Role: 'store_owner',
-                                      user2Id: receiverId,
-                                      user2Role: receiverRole,
-                                      chatName: receiverName,
-                                    );
+                                          user1Id: currentUserId,
+                                          user1Role: 'store_owner',
+                                          user2Id: receiverId,
+                                          user2Role: receiverRole,
+                                          chatName: receiverName,
+                                        );
 
                                     await ChatService.sendMessage(
-                                      conversationId:
-                                          conversation['_id'].toString(),
+                                      conversationId: conversation['_id']
+                                          .toString(),
                                       senderId: currentUserId,
                                       senderRole: 'store_owner',
                                       receiverId: receiverId,
@@ -385,9 +573,9 @@ List<Map<String, dynamic>> get _myInventoryPlants {
         },
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل تحميل المستخدمين: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تحميل المستخدمين: $e')));
     }
   }
 
@@ -433,8 +621,8 @@ List<Map<String, dynamic>> get _myInventoryPlants {
                   duration: const Duration(milliseconds: 300),
                   transitionBuilder:
                       (Widget child, Animation<double> animation) {
-                    return FadeTransition(opacity: animation, child: child);
-                  },
+                        return FadeTransition(opacity: animation, child: child);
+                      },
                   child: _buildCurrentBody(),
                 ),
                 if (_selectedIndex == 2)
@@ -479,13 +667,14 @@ List<Map<String, dynamic>> get _myInventoryPlants {
       case 3:
         return const NotificationsShopOwnerScreen();
       case 4:
-          return const OrdersShopOwnerScreen();
+        return const OrdersShopOwnerScreen();
       case 5:
         return const AboutUsHomeScreen();
       case 6:
         return FavoritesShopOwnerScreen(
-          favoritePlants:
-              _filteredPlants.where((p) => p['isFavorite'] == true).toList(),
+          favoritePlants: _filteredPlants
+              .where((p) => p['isFavorite'] == true)
+              .toList(),
           onFavoriteToggle: (name) {
             final plant = _filteredPlants.firstWhere(
               (p) => p['name'] == name,
@@ -496,20 +685,26 @@ List<Map<String, dynamic>> get _myInventoryPlants {
             }
           },
           onAddToCart: (plant) {},
-          onRatingChanged: (name, rating) {
+          onRatingChanged: (name, rating) async {
             final plant = _filteredPlants.firstWhere(
               (p) => p['name'] == name,
               orElse: () => {},
             );
-            if (plant.isNotEmpty) {
+            if (plant.isNotEmpty && _currentUserId.isNotEmpty) {
               setState(() {
                 _ratings[plant['id']] = rating;
               });
+              await HerbService.rateHerb(
+                herbId: plant['id'],
+                userId: _currentUserId,
+                rating: rating,
+              );
             }
           },
           onShareTap: (name) {
-            final plantIndex =
-                _filteredPlants.indexWhere((p) => p['name'] == name);
+            final plantIndex = _filteredPlants.indexWhere(
+              (p) => p['name'] == name,
+            );
             if (plantIndex != -1) {
               _showShareDialog(context, _filteredPlants[plantIndex]);
             }
@@ -673,17 +868,13 @@ List<Map<String, dynamic>> get _myInventoryPlants {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Image.asset(
-                'assets/images/finalLogo.png',
-                height: 50,
-                width: 70,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Icons.eco, color: Color(0xFF163832), size: 40),
-              ),
-            ],
+          Image.asset(
+            'assets/images/finalLogo.png',
+            height: 50,
+            width: 70,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.eco, color: Color(0xFF163832), size: 40),
           ),
           const Column(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -698,23 +889,90 @@ List<Map<String, dynamic>> get _myInventoryPlants {
               ),
             ],
           ),
-          Builder(
-            builder: (context) {
-              return IconButton(
+          Row(
+            children: [
+              IconButton(
                 icon: const Icon(
-                  Icons.menu,
+                  Icons.favorite,
                   color: Color(0xFF163832),
                   size: 30,
                 ),
                 onPressed: () {
-                  Scaffold.of(context).openEndDrawer();
+                  setState(() {
+                    _selectedIndex = 6;
+                  });
                 },
-              );
-            },
+              ),
+              Builder(
+                builder: (context) {
+                  return IconButton(
+                    icon: const Icon(
+                      Icons.menu,
+                      color: Color(0xFF163832),
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Scaffold.of(context).openEndDrawer();
+                    },
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openImageSearchOnSameHome() async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF163832)),
+      ),
+    );
+
+    try {
+      final bytes = await image.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      final result = await predictHerb(base64Image);
+
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+
+      if (result != null && result.trim().isNotEmpty) {
+        String herbName = result.trim();
+
+        // تحويل أسماء المودل الإنجليزية إلى الأسماء العربية الموجودة في قاعدة البيانات
+        if (herbName.toLowerCase() == 'aloe vera') {
+          herbName = 'الألوفيرا';
+        } else if (herbName.toLowerCase() == 'anise') {
+          herbName = 'اليانسون';
+        } else if (herbName.toLowerCase() == 'basil') {
+          herbName = 'الريحان';
+        }
+
+        setState(() {
+          _searchQuery = herbName;
+          _selectedCategoryIndex = 0;
+          _selectedIndex = 2;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تحليل الصورة: $e')));
+    }
   }
 
   Widget _buildSearchBar() {
@@ -740,19 +998,7 @@ List<Map<String, dynamic>> get _myInventoryPlants {
               children: [
                 IconButton(
                   icon: const Icon(Icons.camera_alt, color: Color(0xFF235347)),
-                  onPressed: () async {
-                    final ImagePicker picker = ImagePicker();
-                    final XFile? image = await picker.pickImage(
-                      source: ImageSource.camera,
-                    );
-                    if (image != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('تم التقاط الصورة: ${image.name}'),
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: _openImageSearchOnSameHome,
                 ),
                 const SizedBox(width: 8),
               ],
@@ -780,6 +1026,9 @@ List<Map<String, dynamic>> get _myInventoryPlants {
               onTap: () {
                 setState(() {
                   _selectedCategoryIndex = index;
+                  if (index == 0) {
+                    _searchQuery = '';
+                  }
                 });
               },
               child: Container(
@@ -881,12 +1130,28 @@ List<Map<String, dynamic>> get _myInventoryPlants {
               salePrice: plant['salePrice'],
               onFavoriteToggle: () => _toggleFavorite(plant['id']),
               onAddToCart: () {},
-              onRatingChanged: (newRating) {
+              onRatingChanged: (newRating) async {
                 setState(() {
                   _ratings[plant['id']] = newRating;
                 });
+                if (_currentUserId.isNotEmpty) {
+                  await HerbService.rateHerb(
+                    herbId: plant['id'],
+                    userId: _currentUserId,
+                    rating: newRating,
+                  );
+                }
               },
               onShareTap: () => _showShareDialog(context, plant),
+              onTap: () {
+                if (_currentUserId.isNotEmpty) {
+                  UserService.logInteraction(
+                    _currentUserId,
+                    plant['id'],
+                    'click',
+                  );
+                }
+              },
             );
           }).toList(),
         ),
@@ -936,7 +1201,11 @@ List<Map<String, dynamic>> get _myInventoryPlants {
               icon: Icons.home,
               index: 2,
               onTap: () {
-                setState(() => _selectedIndex = 2);
+                setState(() {
+                  _selectedIndex = 2;
+                  _searchQuery = '';
+                  _selectedCategoryIndex = 0;
+                });
               },
             ),
             _navIcon(
@@ -995,21 +1264,14 @@ List<Map<String, dynamic>> get _myInventoryPlants {
                     ]
                   : [],
             ),
-            child: Icon(
-              icon,
-              color: const Color(0xFF235347),
-              size: 32,
-            ),
+            child: Icon(icon, color: const Color(0xFF235347), size: 32),
           ),
           if (badgeCount > 0)
             Positioned(
               top: -4,
               right: -4,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.red,
                   borderRadius: BorderRadius.circular(20),
@@ -1047,6 +1309,7 @@ class HerbCard extends StatefulWidget {
   final VoidCallback onAddToCart;
   final ValueChanged<int> onRatingChanged;
   final VoidCallback onShareTap;
+  final VoidCallback? onTap;
 
   const HerbCard({
     super.key,
@@ -1066,6 +1329,7 @@ class HerbCard extends StatefulWidget {
     required this.onAddToCart,
     required this.onRatingChanged,
     required this.onShareTap,
+    this.onTap,
   });
 
   @override
@@ -1090,6 +1354,7 @@ class _HerbCardState extends State<HerbCard> {
         curve: Curves.easeInOut,
         child: GestureDetector(
           onTap: () {
+            if (widget.onTap != null) widget.onTap!();
             showDialog(
               context: context,
               barrierColor: Colors.black54,
@@ -1351,11 +1616,7 @@ class _HerbCardState extends State<HerbCard> {
                     ),
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        
-                        SizedBox(width: 8),
-                        
-                      ],
+                      children: [SizedBox(width: 8)],
                     ),
                   ),
                 ),

@@ -24,6 +24,8 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final TextEditingController confirmPasswordController =
       TextEditingController();
   bool isLoading = false;
+  bool _isPasswordVisible = false;
+  bool _isConfirmPasswordVisible = false;
 
   @override
   void dispose() {
@@ -32,73 +34,60 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     super.dispose();
   }
 
- void _resetPassword() async {
-  if (passwordController.text.trim().isEmpty ||
-      confirmPasswordController.text.trim().isEmpty) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
-      const SnackBar(
-        content: Text('يرجى ملء جميع الحقول'),
-      ),
-    );
-    return;
-  }
+  void _resetPassword() async {
+    if (passwordController.text.trim().isEmpty ||
+        confirmPasswordController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('يرجى ملء جميع الحقول')));
+      return;
+    }
 
-  if (passwordController.text !=
-      confirmPasswordController.text) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
-      const SnackBar(
-        content: Text('كلمات المرور غير متطابقة'),
-      ),
-    );
-    return;
-  }
-
-  setState(() {
-    isLoading = true;
-  });
-
-  try {
-    await PasswordService.resetPassword(
-      email: widget.email,
-      code: widget.otpCode,
-      newPassword: passwordController.text.trim(),
-    );
-
-    if (!mounted) return;
+    if (passwordController.text != confirmPasswordController.text) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('كلمات المرور غير متطابقة')));
+      return;
+    }
 
     setState(() {
-      isLoading = false;
+      isLoading = true;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تم تغيير كلمة المرور بنجاح'),
-      ),
-    );
+    try {
+      await PasswordService.resetPassword(
+        email: widget.email,
+        code: widget.otpCode,
+        newPassword: passwordController.text.trim(),
+      );
 
-    Navigator.pushAndRemoveUntil(
-      context,
-      FadePageRoute(page: const LoginScreen()),
-      (route) => false,
-    );
-  } catch (e) {
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() {
-      isLoading = false;
-    });
+      setState(() {
+        isLoading = false;
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(e.toString()),
-      ),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تغيير كلمة المرور بنجاح')),
+      );
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        FadePageRoute(page: const LoginScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -230,16 +219,50 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     required TextEditingController controller,
     bool isPassword = false,
   }) {
+    final bool isConfirmField = controller == confirmPasswordController;
+
     return TextFormField(
       controller: controller,
-      obscureText: isPassword,
+
+      obscureText: isPassword
+          ? (isConfirmField ? !_isConfirmPasswordVisible : !_isPasswordVisible)
+          : false,
+
       style: const TextStyle(color: Colors.white),
+
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70),
+
         prefixIcon: Icon(icon, color: Colors.white70),
+
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  isConfirmField
+                      ? (_isConfirmPasswordVisible
+                            ? Icons.visibility
+                            : Icons.visibility_off)
+                      : (_isPasswordVisible
+                            ? Icons.visibility
+                            : Icons.visibility_off),
+                  color: Colors.white70,
+                ),
+                onPressed: () {
+                  setState(() {
+                    if (isConfirmField) {
+                      _isConfirmPasswordVisible = !_isConfirmPasswordVisible;
+                    } else {
+                      _isPasswordVisible = !_isPasswordVisible;
+                    }
+                  });
+                },
+              )
+            : null,
+
         filled: true,
         fillColor: Colors.white.withOpacity(0.1),
+
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: BorderSide(
@@ -247,6 +270,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             width: 1.5,
           ),
         ),
+
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: const BorderSide(color: Colors.white, width: 2),

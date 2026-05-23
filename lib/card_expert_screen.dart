@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'delivery_location_screen.dart';
 
 class CardExpertScreen extends StatefulWidget {
   final double totalPrice;
@@ -16,8 +17,67 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
   final _cvvController = TextEditingController();
   final _nameController = TextEditingController();
 
+  Map<String, double>? _deliveryLocation;
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _cardNumberController.dispose();
+    _expiryDateController.dispose();
+    _cvvController.dispose();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDeliveryLocationAndPay({
+    required bool isCashOnDelivery,
+  }) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const DeliveryLocationScreen()),
+    );
+
+    if (result == null) return;
+
+    _deliveryLocation = {
+      'lat': (result['lat'] as num).toDouble(),
+      'lng': (result['lng'] as num).toDouble(),
+    };
+
+    await _submitOrder(isCashOnDelivery: isCashOnDelivery);
+  }
+
+  Future<void> _submitOrder({required bool isCashOnDelivery}) async {
+    if (_deliveryLocation == null) return;
+
+    if (!isCashOnDelivery) {
+      if (_cardNumberController.text.trim().isEmpty ||
+          _nameController.text.trim().isEmpty ||
+          _expiryDateController.text.trim().isEmpty ||
+          _cvvController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('الرجاء تعبئة بيانات البطاقة أولاً')),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (!mounted) return;
+
+    setState(() {
+      _isSubmitting = false;
+    });
+
+    _processPayment(isCashOnDelivery: isCashOnDelivery);
+  }
+
   void _processPayment({bool isCashOnDelivery = false}) {
-    // Show success dialog
     showDialog(
       context: context,
       builder: (context) {
@@ -51,6 +111,13 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                 style: const TextStyle(color: Colors.white70, fontSize: 16),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 10),
+              if (_deliveryLocation != null)
+                Text(
+                  'موقع التوصيل:\n${_deliveryLocation!['lat']}, ${_deliveryLocation!['lng']}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
             ],
           ),
           actions: [
@@ -63,11 +130,8 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                   ),
                 ),
                 onPressed: () {
-                  Navigator.pop(context); // close dialog
-                  Navigator.pop(
-                    context,
-                    true,
-                  ); // pop back to home with success status
+                  Navigator.pop(context);
+                  Navigator.pop(context, true);
                 },
                 child: const Text(
                   'موافق',
@@ -101,7 +165,6 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
       ),
       body: Stack(
         children: [
-          // Background Effect
           Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
@@ -142,7 +205,6 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Amount to pay
                       Center(
                         child: Column(
                           children: [
@@ -167,7 +229,6 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                       ),
                       const SizedBox(height: 40),
 
-                      // Credit Card UI Mock
                       Container(
                         height: 270,
                         padding: const EdgeInsets.all(20),
@@ -271,7 +332,6 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                       ),
                       const SizedBox(height: 30),
 
-                      // Input Fields
                       _buildTextField(
                         'رقم البطاقة',
                         _cardNumberController,
@@ -279,8 +339,11 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                         maxLength: 16,
                       ),
                       const SizedBox(height: 15),
+
                       _buildTextField('اسم حامل البطاقة', _nameController),
+
                       const SizedBox(height: 15),
+
                       Row(
                         children: [
                           Expanded(
@@ -303,12 +366,38 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 40),
 
-                      // Pay Button
+                      const SizedBox(height: 25),
+
+                      if (_deliveryLocation != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF8EB69B),
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            'موقع التوصيل المحدد:\n${_deliveryLocation!['lat']}, ${_deliveryLocation!['lng']}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+
+                      const SizedBox(height: 20),
+
                       ElevatedButton(
-                        onPressed: () =>
-                            _processPayment(isCashOnDelivery: false),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _pickDeliveryLocationAndPay(
+                                isCashOnDelivery: false,
+                              ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF8EB69B),
                           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -316,31 +405,39 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Text(
-                              'تأكيد الدفع',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                        child: _isSubmitting
+                            ? const CircularProgressIndicator(
                                 color: Color(0xFF051F20),
+                              )
+                            : const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'تحديد الموقع ثم تأكيد الدفع',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF051F20),
+                                    ),
+                                  ),
+                                  SizedBox(width: 8),
+                                  Icon(
+                                    Icons.payment,
+                                    color: Color(0xFF051F20),
+                                    size: 22,
+                                  ),
+                                ],
                               ),
-                            ),
-                            SizedBox(width: 8),
-                            Icon(
-                              Icons.payment,
-                              color: Color(0xFF051F20),
-                              size: 22,
-                            ),
-                          ],
-                        ),
                       ),
+
                       const SizedBox(height: 15),
-                      // Cash on Delivery Option
+
                       OutlinedButton(
-                        onPressed: () =>
-                            _processPayment(isCashOnDelivery: true),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => _pickDeliveryLocationAndPay(
+                                isCashOnDelivery: true,
+                              ),
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           side: const BorderSide(
@@ -351,11 +448,11 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
+                          children: [
                             Text(
-                              'الدفع عند الاستلام',
+                              'تحديد الموقع ثم الدفع عند الاستلام',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -395,7 +492,7 @@ class _CardExpertScreenState extends State<CardExpertScreen> {
       maxLength: maxLength,
       obscureText: obscureText,
       style: const TextStyle(color: Colors.white),
-      onChanged: (_) => setState(() {}), // rebuild to update card UI
+      onChanged: (_) => setState(() {}),
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: Colors.white70),

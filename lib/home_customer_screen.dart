@@ -1,26 +1,27 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:image_picker/image_picker.dart';
 import 'smart_chat_screen.dart';
 import '../services/herb_service.dart';
 import '../models/herb_model.dart';
 import '../services/user_service.dart';
-
-// Import the new screens
 import 'store_names_customer_screen.dart';
 import 'chat_customer_screen.dart';
-import 'chat_detail_customer_screen.dart';
 import 'notifications_customer_screen.dart';
 import 'cart_customer_screen.dart';
+import 'services/favorite_service.dart';
 import 'about_us_home_screen.dart';
+import 'dart:convert';
+import 'package:image_picker/image_picker.dart';
+import 'herb_predictor.dart';
 import 'contact_us_customer_screen.dart';
 import 'profile_customer_screen.dart';
 import 'favorites_customer_screen.dart';
 import 'login_screen.dart';
 import 'herb_post_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../services/chat_service.dart'; 
+import '../services/chat_service.dart';
+
 class HomeCustomerScreen extends StatefulWidget {
   const HomeCustomerScreen({super.key});
 
@@ -48,34 +49,76 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
     'أعشاب عطرية',
     'أعشاب للطهي',
   ];
-
   @override
-void initState() {
-  super.initState();
-  fetchHerbs();
-  _loadChatUnreadCount();
-}
-
-Future<void> _loadChatUnreadCount() async {
-  final prefs = await SharedPreferences.getInstance();
-  final userId = prefs.getString('userId') ?? '';
-
-  if (userId.isEmpty) return;
-
-  final conversations = await ChatService.getConversations(userId);
-
-  int total = 0;
-
-  for (final conv in conversations) {
-    total += (conv['unreadCount'] as num?)?.toInt() ?? 0;
+  void initState() {
+    super.initState();
+    _loadUserPreferences();
+    fetchHerbs();
+    _loadChatUnreadCount();
   }
 
-  if (!mounted) return;
+  List<dynamic> _herbPreferences = [];
+  String _currentUserId = '';
 
-  setState(() {
-    _chatUnreadCount = total;
-  });
-} 
+  Future<void> _loadFavorites() async {
+    if (_currentUserId.isEmpty) return;
+
+    try {
+      final favorites = await FavoriteService.getFavorites(_currentUserId);
+
+      final Map<String, bool> loadedFavorites = {};
+
+      for (final fav in favorites) {
+        loadedFavorites[fav['herbId'].toString()] = true;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _favoriteStatus.addAll(loadedFavorites);
+      });
+    } catch (e) {
+      debugPrint('LOAD FAVORITES ERROR: $e');
+    }
+  }
+
+  Future<void> _loadUserPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('userId') ?? '';
+    _currentUserId = userId;
+
+    if (userId.isEmpty) return;
+    await _loadFavorites();
+    try {
+      final user = await UserService.getUserById(userId);
+      if (mounted) {
+        setState(() {
+          _herbPreferences = user['herbPreferences'] ?? [];
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadChatUnreadCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userId = prefs.getString('userId') ?? '';
+
+    if (userId.isEmpty) return;
+
+    final conversations = await ChatService.getConversations(userId);
+
+    int total = 0;
+
+    for (final conv in conversations) {
+      total += (conv['unreadCount'] as num?)?.toInt() ?? 0;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _chatUnreadCount = total;
+    });
+  }
 
   Future<void> fetchHerbs() async {
     try {
@@ -87,11 +130,26 @@ Future<void> _loadChatUnreadCount() async {
       final data = await HerbService.getAllHerbs();
       final herbs = data.map((item) => HerbModel.fromJson(item)).toList();
 
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+
       if (!mounted) return;
 
       setState(() {
         _herbs = herbs;
         _isLoadingHerbs = false;
+
+        if (userId.isNotEmpty) {
+          for (var herb in _herbs) {
+            final userRating = herb.ratings.firstWhere(
+              (r) => (r is Map && r['userId'] == userId),
+              orElse: () => null,
+            );
+            if (userRating != null) {
+              _ratings[herb.id] = (userRating['rating'] as num).toInt();
+            }
+          }
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -111,16 +169,12 @@ Future<void> _loadChatUnreadCount() async {
             ? herb.imageUrl
             : 'assets/images/finalLogo.png',
         'name': herb.name,
-        'benefits': herb.benefits.isNotEmpty
-            ? herb.benefits
-            : herb.description,
-        'howToUse': herb.usageMethod.isNotEmpty
-            ? herb.usageMethod
-            : 'غير محدد',
+        'benefits': herb.benefits.isNotEmpty ? herb.benefits : herb.description,
+        'howToUse': herb.usageMethod.isNotEmpty ? herb.usageMethod : 'غير محدد',
         'price': '${herb.price.toStringAsFixed(0)} ₪',
         'category': _mapCategoryToArabic(herb.category),
         'isFavorite': _favoriteStatus[herb.id] ?? false,
-        'rating': _ratings[herb.id] ?? 5,
+        'rating': _ratings[herb.id] ?? _calculateAverageRating(herb.ratings),
         'description': herb.description,
         'scientificName': herb.scientificName,
         'season': herb.season,
@@ -128,11 +182,14 @@ Future<void> _loadChatUnreadCount() async {
         'quantity': herb.quantity,
         'storeName': herb.storeName,
         'comments': herb.comments,
+        'createdAt': herb.createdAt,
+        'salesCount': herb.salesCount,
+        'ratings': herb.ratings,
         'onSale': herb.onSale,
         'salePrice': herb.salePrice != null
             ? '${herb.salePrice!.toStringAsFixed(0)} ₪'
             : null,
-        
+        'saleUpdatedAt': herb.saleUpdatedAt,
       };
     }).toList();
   }
@@ -150,8 +207,61 @@ Future<void> _loadChatUnreadCount() async {
     return category.isEmpty ? 'أعشاب طبية' : category;
   }
 
+  int _calculateAverageRating(List<dynamic>? ratings) {
+    if (ratings == null || ratings.isEmpty) return 1;
+    double sum = 0;
+    for (var r in ratings) {
+      sum += (r is Map ? r['rating'] : r) ?? 0;
+    }
+    return (sum / ratings.length).round();
+  }
+
+  int _getHerbScore(Map<String, dynamic> plant) {
+    int score = 0;
+
+    score += (plant['salesCount'] ?? 0) as int;
+
+    final avgRating = _calculateAverageRating(plant['ratings']);
+    score += avgRating * 10;
+
+    final favoritePlants = _apiPlants
+        .where((p) => _favoriteStatus[p['id']] == true)
+        .toList();
+
+    for (final fav in favoritePlants) {
+      if (plant['id'] == fav['id']) continue;
+
+      if (plant['category'] == fav['category']) {
+        score += 120;
+      }
+
+      final plantBenefits = plant['benefits'].toString();
+      final favBenefits = fav['benefits'].toString();
+
+      for (final word in favBenefits.split(' ')) {
+        if (word.length > 2 && plantBenefits.contains(word)) {
+          score += 15;
+        }
+      }
+    }
+
+    return score;
+  }
+
+  int _getUserPreferenceScore(String herbId) {
+    if (_herbPreferences.isEmpty) return 0;
+    final pref = _herbPreferences.firstWhere(
+      (p) => p['herbId'] == herbId,
+      orElse: () => null,
+    );
+    if (pref != null) {
+      return (pref['score'] ?? 0) as int;
+    }
+    return 0;
+  }
+
   List<Map<String, dynamic>> get _filteredPlants {
-    List<Map<String, dynamic>> plants = _apiPlants;
+    List<Map<String, dynamic>> plants = List.from(_apiPlants);
 
     if (_selectedCategoryIndex != 0) {
       String selectedCat = _categories[_selectedCategoryIndex];
@@ -167,43 +277,87 @@ Future<void> _loadChatUnreadCount() async {
       }).toList();
     }
 
+    plants.sort((a, b) {
+      bool isARecentSale =
+          a['onSale'] == true &&
+          a['saleUpdatedAt'] != null &&
+          DateTime.now()
+                  .toUtc()
+                  .difference(
+                    DateTime.tryParse(a['saleUpdatedAt']) ?? DateTime(1970),
+                  )
+                  .inHours <
+              1;
+      bool isBRecentSale =
+          b['onSale'] == true &&
+          b['saleUpdatedAt'] != null &&
+          DateTime.now()
+                  .toUtc()
+                  .difference(
+                    DateTime.tryParse(b['saleUpdatedAt']) ?? DateTime(1970),
+                  )
+                  .inHours <
+              1;
+
+      if (isARecentSale && !isBRecentSale) return -1;
+      if (!isARecentSale && isBRecentSale) return 1;
+
+      DateTime timeA =
+          DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime(1970);
+      DateTime timeB =
+          DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime(1970);
+      bool isANew = DateTime.now().toUtc().difference(timeA).inHours < 1;
+      bool isBNew = DateTime.now().toUtc().difference(timeB).inHours < 1;
+
+      if (isANew && !isBNew) return -1;
+      if (!isANew && isBNew) return 1;
+
+      int prefA = _getUserPreferenceScore(a['id']);
+      int prefB = _getUserPreferenceScore(b['id']);
+      if (prefA != prefB) return prefB.compareTo(prefA);
+
+      int scoreA = _getHerbScore(a);
+      int scoreB = _getHerbScore(b);
+      return scoreB.compareTo(scoreA);
+    });
+
     return plants;
   }
 
   void _addToCart(Map<String, dynamic> plant) {
-  setState(() {
-    final existingIndex = _cartItems.indexWhere(
-      (item) => item['name'] == plant['name'],
-    );
+    setState(() {
+      final existingIndex = _cartItems.indexWhere(
+        (item) => item['name'] == plant['name'],
+      );
 
-    final effectivePrice =
-        (plant['onSale'] == true && plant['salePrice'] != null)
-            ? plant['salePrice']
-            : plant['price'];
+      final effectivePrice =
+          (plant['onSale'] == true && plant['salePrice'] != null)
+          ? plant['salePrice']
+          : plant['price'];
 
-    if (existingIndex != -1) {
-      _cartItems[existingIndex]['quantity'] += 1;
-      _cartItems[existingIndex]['price'] = effectivePrice;
-      _cartItems[existingIndex]['onSale'] = plant['onSale'] ?? false;
-      _cartItems[existingIndex]['salePrice'] = plant['salePrice'];
-    } else {
-      _cartItems.add({
-        'id': plant['id'],
-        'name': plant['name'],
-        'price': effectivePrice,
-        'imageUrl': plant['imageUrl'],
-        'quantity': 1,
-        'storeOwnerId': plant['storeOwnerId'],
-        'storeName': plant['storeName'],
-        'onSale': plant['onSale'] ?? false,
-        'salePrice': plant['salePrice'],
-        'originalPrice': plant['price'],
-      });
-    }
+      if (existingIndex != -1) {
+        _cartItems[existingIndex]['quantity'] += 1;
+        _cartItems[existingIndex]['price'] = effectivePrice;
+        _cartItems[existingIndex]['onSale'] = plant['onSale'] ?? false;
+        _cartItems[existingIndex]['salePrice'] = plant['salePrice'];
+      } else {
+        _cartItems.add({
+          'id': plant['id'],
+          'name': plant['name'],
+          'price': effectivePrice,
+          'imageUrl': plant['imageUrl'],
+          'quantity': 1,
+          'storeOwnerId': plant['storeOwnerId'],
+          'storeName': plant['storeName'],
+          'onSale': plant['onSale'] ?? false,
+          'salePrice': plant['salePrice'],
+          'originalPrice': plant['price'],
+        });
+      }
 
-    _selectedIndex = 4;
-  });
-}
+      _selectedIndex = 4;
+    });
+  }
 
   void _removeFromCart(String name) {
     setState(() {
@@ -224,189 +378,234 @@ Future<void> _loadChatUnreadCount() async {
   }
 
   double get _cartTotal {
-  double total = 0.0;
-  for (var item in _cartItems) {
-    final priceSource =
-        (item['onSale'] == true && item['salePrice'] != null)
-            ? item['salePrice']
-            : item['price'];
+    double total = 0.0;
+    for (var item in _cartItems) {
+      final priceSource = (item['onSale'] == true && item['salePrice'] != null)
+          ? item['salePrice']
+          : item['price'];
 
-    String priceStr = priceSource.toString().replaceAll(
-      RegExp(r'[^0-9.]'),
-      '',
-    );
+      String priceStr = priceSource.toString().replaceAll(
+        RegExp(r'[^0-9.]'),
+        '',
+      );
 
-    double price = double.tryParse(priceStr) ?? 0.0;
-    total += price * (item['quantity'] as int);
+      double price = double.tryParse(priceStr) ?? 0.0;
+      total += price * (item['quantity'] as int);
+    }
+    return total;
   }
-  return total;
-}
 
-  Future<void> _showShareDialog(BuildContext context, Map<String, dynamic> plant) async {
-  try {
-    final users = await UserService.getAllUsers();
-    String searchQuery = '';
+  Future<void> _showShareDialog(
+    BuildContext context,
+    Map<String, dynamic> plant,
+  ) async {
+    try {
+      final users = await UserService.getAllUsers();
+      String searchQuery = '';
 
-    if (!context.mounted) return;
+      if (!context.mounted) return;
 
-    showDialog(
-      context: context,
-      builder: (BuildContext ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final filtered = users.where((user) {
-              final name = (user['fullName'] ??
-                      user['ownerName'] ??
-                      user['storeName'] ??
-                      user['email'] ??
-                      '')
-                  .toString();
-              return name.contains(searchQuery);
-            }).toList();
+      showDialog(
+        context: context,
+        builder: (BuildContext ctx) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final filtered = users.where((user) {
+                final name =
+                    (user['fullName'] ??
+                            user['ownerName'] ??
+                            user['storeName'] ??
+                            user['email'] ??
+                            '')
+                        .toString();
+                return name.contains(searchQuery);
+              }).toList();
 
-            return AlertDialog(
-              backgroundColor: const Color(0xFFDAF1DE),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: Text(
-                'إرسال ${plant['name']} إلى:',
-                style: const TextStyle(
-                  color: Color(0xFF163832),
-                  fontWeight: FontWeight.bold,
+              return AlertDialog(
+                backgroundColor: const Color(0xFFDAF1DE),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-              ),
-              content: SizedBox(
-                width: 320,
-                height: 350,
-                child: Column(
-                  children: [
-                    TextField(
-                      onChanged: (val) {
-                        setDialogState(() {
-                          searchQuery = val;
-                        });
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'ابحث عن اسم المستخدم...',
-                        prefixIcon: const Icon(Icons.search),
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(15),
-                          borderSide: BorderSide.none,
+                title: Text(
+                  'إرسال ${plant['name']} إلى:',
+                  style: const TextStyle(
+                    color: Color(0xFF163832),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                content: SizedBox(
+                  width: 320,
+                  height: 350,
+                  child: Column(
+                    children: [
+                      TextField(
+                        onChanged: (val) {
+                          setDialogState(() {
+                            searchQuery = val;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'ابحث عن اسم المستخدم...',
+                          prefixIcon: const Icon(Icons.search),
+                          filled: true,
+                          fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(15),
+                            borderSide: BorderSide.none,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 15),
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: filtered.length,
-                        itemBuilder: (context, index) {
-                          final user = filtered[index];
+                      const SizedBox(height: 15),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: filtered.length,
+                          itemBuilder: (context, index) {
+                            final user = filtered[index];
 
-                          final name = user['fullName'] ??
-                              user['ownerName'] ??
-                              user['storeName'] ??
-                              user['email'] ??
-                              'مستخدم';
+                            final name =
+                                user['fullName'] ??
+                                user['ownerName'] ??
+                                user['storeName'] ??
+                                user['email'] ??
+                                'مستخدم';
 
-                          final role = user['role'] == 'store_owner'
-                              ? 'صاحب متجر'
-                              : user['role'] == 'herbal_expert'
-                                  ? 'خبير'
-                                  : 'زبون';
+                            final role = user['role'] == 'store_owner'
+                                ? 'صاحب متجر'
+                                : user['role'] == 'herbal_expert'
+                                ? 'خبير'
+                                : 'زبون';
 
-                          return ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFF8EB69B),
-                              child: Icon(Icons.person, color: Colors.white),
-                            ),
-                            title: Text(
-                              '$name - $role',
-                              style: const TextStyle(
-                                color: Color(0xFF163832),
-                                fontWeight: FontWeight.bold,
+                            return ListTile(
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFF8EB69B),
+                                child: Icon(Icons.person, color: Colors.white),
                               ),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(
-                                CupertinoIcons.paperplane,
-                                color: Color(0xFF235347),
+                              title: Text(
+                                '$name - $role',
+                                style: const TextStyle(
+                                  color: Color(0xFF163832),
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                             onPressed: () async {
-  try {
-    Navigator.pop(ctx);
+                              trailing: IconButton(
+                                icon: const Icon(
+                                  CupertinoIcons.paperplane,
+                                  color: Color(0xFF235347),
+                                ),
+                                onPressed: () async {
+                                  try {
+                                    Navigator.pop(ctx);
 
-    final prefs = await SharedPreferences.getInstance();
-    final currentUserId = prefs.getString('userId') ?? '';
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    final currentUserId =
+                                        prefs.getString('userId') ?? '';
 
-    if (currentUserId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('لم يتم العثور على المستخدم الحالي')),
-      );
-      return;
-    }
+                                    if (currentUserId.isEmpty) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            'لم يتم العثور على المستخدم الحالي',
+                                          ),
+                                        ),
+                                      );
+                                      return;
+                                    }
 
-    final receiverId = user['_id'].toString();
-    final receiverName = name.toString();
-    final receiverRole = user['role'].toString();
+                                    final receiverId = user['_id'].toString();
+                                    final receiverName = name.toString();
+                                    final receiverRole = user['role']
+                                        .toString();
 
-    final conversation = await ChatService.createConversation(
-      user1Id: currentUserId,
-      user1Role: 'customer',
-      user2Id: receiverId,
-      user2Role: receiverRole,
-      chatName: receiverName,
-    );
+                                    final conversation =
+                                        await ChatService.createConversation(
+                                          user1Id: currentUserId,
+                                          user1Role: 'customer',
+                                          user2Id: receiverId,
+                                          user2Role: receiverRole,
+                                          chatName: receiverName,
+                                        );
 
-    await ChatService.sendMessage(
-      conversationId: conversation['_id'].toString(),
-      senderId: currentUserId,
-      senderRole: 'customer',
-      receiverId: receiverId,
-      receiverRole: receiverRole,
-      text: 'تم إرسال عشبة ${plant['name']}',
-      type: 'post',
-      herb: plant,
-    );
+                                    await ChatService.sendMessage(
+                                      conversationId: conversation['_id']
+                                          .toString(),
+                                      senderId: currentUserId,
+                                      senderRole: 'customer',
+                                      receiverId: receiverId,
+                                      receiverRole: receiverRole,
+                                      text: 'تم إرسال عشبة ${plant['name']}',
+                                      type: 'post',
+                                      herb: plant,
+                                    );
 
-    if (!context.mounted) return;
+                                    if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('تم إرسال ${plant['name']} إلى $receiverName')),
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('فشل إرسال العشبة: $e')),
-    );
-  }
-},
-                            ),
-                          );
-                        },
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'تم إرسال ${plant['name']} إلى $receiverName',
+                                        ),
+                                      ),
+                                    );
+                                  } catch (e) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('فشل إرسال العشبة: $e'),
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('فشل تحميل المستخدمين: $e')),
-    );
+              );
+            },
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تحميل المستخدمين: $e')));
+    }
   }
-}
 
-void _toggleFavorite(String herbId) {
-  setState(() {
-    _favoriteStatus[herbId] = !(_favoriteStatus[herbId] ?? false);
-  });
-}
+  Future<void> _toggleFavorite(String herbId) async {
+    if (_currentUserId.isEmpty) return;
+
+    final currentStatus = _favoriteStatus[herbId] ?? false;
+
+    setState(() {
+      _favoriteStatus[herbId] = !currentStatus;
+    });
+
+    try {
+      if (!currentStatus) {
+        await FavoriteService.addFavorite(_currentUserId, herbId);
+      } else {
+        final favorites = await FavoriteService.getFavorites(_currentUserId);
+
+        final favorite = favorites.firstWhere(
+          (f) => f['herbId'].toString() == herbId,
+          orElse: () => null,
+        );
+
+        if (favorite != null) {
+          await FavoriteService.removeFavorite(_currentUserId, herbId);
+        }
+      }
+    } catch (e) {
+      debugPrint('FAVORITE ERROR: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -468,9 +667,9 @@ void _toggleFavorite(String herbId) {
       case 0:
         return const StoreNamesCustomerScreen();
       case 1:
-       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadChatUnreadCount();
-           });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _loadChatUnreadCount();
+        });
         return const ChatCustomerScreen();
       case 2:
         return _buildHomeContent();
@@ -500,20 +699,26 @@ void _toggleFavorite(String herbId) {
             }
           },
           onAddToCart: _addToCart,
-          onRatingChanged: (name, rating) {
+          onRatingChanged: (name, rating) async {
             final plant = _filteredPlants.firstWhere(
               (p) => p['name'] == name,
               orElse: () => {},
             );
-            if (plant.isNotEmpty) {
+            if (plant.isNotEmpty && _currentUserId.isNotEmpty) {
               setState(() {
                 _ratings[plant['id']] = rating;
               });
+              await HerbService.rateHerb(
+                herbId: plant['id'],
+                userId: _currentUserId,
+                rating: rating,
+              );
             }
           },
           onShareTap: (name) {
-            final plantIndex =
-                _filteredPlants.indexWhere((p) => p['name'] == name);
+            final plantIndex = _filteredPlants.indexWhere(
+              (p) => p['name'] == name,
+            );
             if (plantIndex != -1) {
               _showShareDialog(context, _filteredPlants[plantIndex]);
             }
@@ -662,17 +867,13 @@ void _toggleFavorite(String herbId) {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Image.asset(
-                'assets/images/finalLogo.png',
-                height: 50,
-                width: 70,
-                fit: BoxFit.contain,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Icons.eco, color: Color(0xFF163832), size: 40),
-              ),
-            ],
+          Image.asset(
+            'assets/images/finalLogo.png',
+            height: 50,
+            width: 70,
+            fit: BoxFit.contain,
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.eco, color: Color(0xFF163832), size: 40),
           ),
           const Column(
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -687,23 +888,90 @@ void _toggleFavorite(String herbId) {
               ),
             ],
           ),
-          Builder(
-            builder: (context) {
-              return IconButton(
+          Row(
+            children: [
+              IconButton(
                 icon: const Icon(
-                  Icons.menu,
+                  Icons.favorite,
                   color: Color(0xFF163832),
                   size: 30,
                 ),
                 onPressed: () {
-                  Scaffold.of(context).openEndDrawer();
+                  setState(() {
+                    _selectedIndex = 6;
+                  });
                 },
-              );
-            },
+              ),
+              Builder(
+                builder: (context) {
+                  return IconButton(
+                    icon: const Icon(
+                      Icons.menu,
+                      color: Color(0xFF163832),
+                      size: 30,
+                    ),
+                    onPressed: () {
+                      Scaffold.of(context).openEndDrawer();
+                    },
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _openImageSearchOnSameHome() async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+
+    if (image == null) return;
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFF163832)),
+      ),
+    );
+
+    try {
+      final bytes = await image.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      final result = await predictHerb(base64Image);
+
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+
+      if (result != null && result.trim().isNotEmpty) {
+        String herbName = result.trim();
+
+        // تحويل أسماء المودل الإنجليزية إلى الأسماء العربية الموجودة في قاعدة البيانات
+        if (herbName.toLowerCase() == 'aloe vera') {
+          herbName = 'الألوفيرا';
+        } else if (herbName.toLowerCase() == 'anise') {
+          herbName = 'اليانسون';
+        } else if (herbName.toLowerCase() == 'basil') {
+          herbName = 'الريحان';
+        }
+
+        setState(() {
+          _searchQuery = herbName;
+          _selectedCategoryIndex = 0;
+          _selectedIndex = 2;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تحليل الصورة: $e')));
+    }
   }
 
   Widget _buildSearchBar() {
@@ -723,28 +991,9 @@ void _toggleFavorite(String herbId) {
           decoration: InputDecoration(
             hintText: 'ابحث عن عشبتك المفضلة...',
             hintStyle: const TextStyle(color: Colors.grey),
-            prefixIcon: const Icon(Icons.search, color: Colors.grey),
-            suffixIcon: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.camera_alt, color: Color(0xFF235347)),
-                  onPressed: () async {
-                    final ImagePicker picker = ImagePicker();
-                    final XFile? image = await picker.pickImage(
-                      source: ImageSource.camera,
-                    );
-                    if (image != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('تم التقاط الصورة: ${image.name}'),
-                        ),
-                      );
-                    }
-                  },
-                ),
-                const SizedBox(width: 8),
-              ],
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.camera_alt, color: Color(0xFF235347)),
+              onPressed: _openImageSearchOnSameHome,
             ),
             border: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(vertical: 15.0),
@@ -769,6 +1018,10 @@ void _toggleFavorite(String herbId) {
               onTap: () {
                 setState(() {
                   _selectedCategoryIndex = index;
+
+                  if (index == 0) {
+                    _searchQuery = '';
+                  }
                 });
               },
               child: Container(
@@ -802,9 +1055,7 @@ void _toggleFavorite(String herbId) {
 
   Widget _buildPlantHorizontalList() {
     if (_isLoadingHerbs) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_herbsError != null) {
@@ -858,27 +1109,43 @@ void _toggleFavorite(String herbId) {
           alignment: WrapAlignment.center,
           children: _filteredPlants.map((plant) {
             return HerbCard(
-                      herbId: plant['id'],
-                      imageUrl: plant['imageUrl'],
-                      name: plant['name'],
-                      benefits: plant['benefits'],
-                      howToUse: plant['howToUse'],
-                      price: plant['price'],
-                       storeName: plant['storeName'],
-                       comments: plant['comments'] ?? [],
-                      isFavorite: plant['isFavorite'],
-                      rating: plant['rating'] ?? 5,
-                      onSale: plant['onSale'] ?? false,
-                      salePrice: plant['salePrice'],
-                      onFavoriteToggle: () => _toggleFavorite(plant['id']),
-                      onAddToCart: () => _addToCart(plant),
-                      onRatingChanged: (newRating) {
-                        setState(() {
-                          _ratings[plant['id']] = newRating;
-                        });
-                      },
-                      onShareTap: () => _showShareDialog(context, plant),
-                    );
+              herbId: plant['id'],
+              imageUrl: plant['imageUrl'],
+              name: plant['name'],
+              benefits: plant['benefits'],
+              howToUse: plant['howToUse'],
+              price: plant['price'],
+              storeName: plant['storeName'],
+              comments: plant['comments'] ?? [],
+              isFavorite: plant['isFavorite'],
+              rating: plant['rating'] ?? 5,
+              onSale: plant['onSale'] ?? false,
+              salePrice: plant['salePrice'],
+              onFavoriteToggle: () => _toggleFavorite(plant['id']),
+              onAddToCart: () => _addToCart(plant),
+              onRatingChanged: (newRating) async {
+                setState(() {
+                  _ratings[plant['id']] = newRating;
+                });
+                if (_currentUserId.isNotEmpty) {
+                  await HerbService.rateHerb(
+                    herbId: plant['id'],
+                    userId: _currentUserId,
+                    rating: newRating,
+                  );
+                }
+              },
+              onShareTap: () => _showShareDialog(context, plant),
+              onTap: () {
+                if (_currentUserId.isNotEmpty) {
+                  UserService.logInteraction(
+                    _currentUserId,
+                    plant['id'],
+                    'click',
+                  );
+                }
+              },
+            );
           }).toList(),
         ),
       ),
@@ -914,21 +1181,25 @@ void _toggleFavorite(String herbId) {
                 setState(() => _selectedIndex = 0);
               },
             ),
-              _navIcon(
-            icon: Icons.chat_bubble_outline,
-            index: 1,
-            badgeCount: _chatUnreadCount,
-            onTap: () async {
-              setState(() => _selectedIndex = 1);
+            _navIcon(
+              icon: Icons.chat_bubble_outline,
+              index: 1,
+              badgeCount: _chatUnreadCount,
+              onTap: () async {
+                setState(() => _selectedIndex = 1);
 
-              await _loadChatUnreadCount();
-            },
-          ),
+                await _loadChatUnreadCount();
+              },
+            ),
             _navIcon(
               icon: Icons.home,
               index: 2,
               onTap: () {
-                setState(() => _selectedIndex = 2);
+                setState(() {
+                  _selectedIndex = 2;
+                  _searchQuery = '';
+                  _selectedCategoryIndex = 0;
+                });
               },
             ),
             _navIcon(
@@ -995,59 +1266,52 @@ void _toggleFavorite(String herbId) {
   }
 
   Widget _navIcon({
-  required IconData icon,
-  required int index,
-  required VoidCallback onTap,
-  int badgeCount = 0,
-}) {
-  bool isSelected = _selectedIndex == index;
+    required IconData icon,
+    required int index,
+    required VoidCallback onTap,
+    int badgeCount = 0,
+  }) {
+    bool isSelected = _selectedIndex == index;
 
-  return GestureDetector(
-    onTap: onTap,
-    child: Stack(
-      clipBehavior: Clip.none,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
-            shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isSelected ? Colors.white : Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: const Color(0xFF235347), size: 32),
           ),
-          child: Icon(
-            icon,
-            color: const Color(0xFF235347),
-            size: 32,
-          ),
-        ),
 
-        if (badgeCount > 0)
-          Positioned(
-            top: -4,
-            right: -4,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 6,
-                vertical: 2,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                badgeCount > 99 ? '99+' : badgeCount.toString(),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+          if (badgeCount > 0)
+            Positioned(
+              top: -4,
+              right: -4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
 }
 
 class RobotChatIconPainter extends CustomPainter {
@@ -1148,14 +1412,15 @@ class HerbCard extends StatefulWidget {
   final bool isFavorite;
   final int rating;
   final bool onSale;
-final String? salePrice;
+  final String? salePrice;
   final VoidCallback onFavoriteToggle;
   final VoidCallback onAddToCart;
   final ValueChanged<int> onRatingChanged;
   final VoidCallback onShareTap;
   final String herbId;
-final String storeName;
-final List<dynamic> comments;
+  final String storeName;
+  final List<dynamic> comments;
+  final VoidCallback? onTap;
 
   const HerbCard({
     super.key,
@@ -1173,8 +1438,9 @@ final List<dynamic> comments;
     required this.onRatingChanged,
     required this.onShareTap,
     required this.herbId,
-required this.storeName,
-required this.comments,
+    required this.storeName,
+    required this.comments,
+    this.onTap,
   });
 
   @override
@@ -1199,24 +1465,25 @@ class _HerbCardState extends State<HerbCard> {
         curve: Curves.easeInOut,
         child: GestureDetector(
           onTap: () {
+            if (widget.onTap != null) widget.onTap!();
             showDialog(
               context: context,
               barrierColor: Colors.black54,
               builder: (context) => HerbPostDialog(
-              herbId: widget.herbId,
-              imageUrl: widget.imageUrl,
-              name: widget.name,
-              benefits: widget.benefits,
-              howToUse: widget.howToUse,
-              price: widget.price,
-              storeName: widget.storeName,
-              onSale: widget.onSale,
-              salePrice: widget.salePrice,
-              comments: widget.comments,
-              isFavorite: widget.isFavorite,
-              onFavoriteToggle: widget.onFavoriteToggle,
-              onAddToCart: widget.onAddToCart,
-            ),
+                herbId: widget.herbId,
+                imageUrl: widget.imageUrl,
+                name: widget.name,
+                benefits: widget.benefits,
+                howToUse: widget.howToUse,
+                price: widget.price,
+                storeName: widget.storeName,
+                onSale: widget.onSale,
+                salePrice: widget.salePrice,
+                comments: widget.comments,
+                isFavorite: widget.isFavorite,
+                onFavoriteToggle: widget.onFavoriteToggle,
+                onAddToCart: widget.onAddToCart,
+              ),
             );
           },
           child: Container(
@@ -1285,25 +1552,28 @@ class _HerbCardState extends State<HerbCard> {
                         ),
                       ),
                       if (widget.onSale)
-                    Positioned(
-                      top: 15,
-                      right: 15,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Text(
-                          'عرض خاص',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
+                        Positioned(
+                          top: 15,
+                          right: 15,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'عرض خاص',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
                       Positioned(
                         top: 15,
                         left: 15,
@@ -1390,37 +1660,37 @@ class _HerbCardState extends State<HerbCard> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             if (widget.onSale && widget.salePrice != null)
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      widget.price,
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontWeight: FontWeight.normal,
-                                        fontSize: 14,
-                                        decoration: TextDecoration.lineThrough,
-                                      ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.price,
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.normal,
+                                      fontSize: 14,
+                                      decoration: TextDecoration.lineThrough,
                                     ),
-                                    Text(
-                                      widget.salePrice!,
-                                      style: const TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              else
-                                Text(
-                                  widget.price,
-                                  style: const TextStyle(
-                                    color: Color(0xFF235347),
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
                                   ),
+                                  Text(
+                                    widget.salePrice!,
+                                    style: const TextStyle(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                widget.price,
+                                style: const TextStyle(
+                                  color: Color(0xFF235347),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
                                 ),
+                              ),
                             Row(
                               children: List.generate(5, (index) {
                                 return GestureDetector(
