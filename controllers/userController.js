@@ -67,8 +67,49 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+const logInteraction = async (req, res) => {
+  try {
+    const { herbId, type } = req.body;
+    const userId = req.params.id;
+
+    if (!herbId || !type) {
+      return res.status(400).json({ message: "herbId and type are required" });
+    }
+
+    let weight = 1;
+    if (type === "search") weight = 2;
+    if (type === "purchase") weight = 5;
+    if (type === "click") weight = 1;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const prefIndex = user.herbPreferences.findIndex(p => p.herbId === herbId);
+    if (prefIndex !== -1) {
+      user.herbPreferences[prefIndex].score += weight;
+    } else {
+      user.herbPreferences.push({ herbId, score: weight });
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      message: "Interaction logged successfully",
+      herbPreferences: user.herbPreferences
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getUserById,
   updateUserById,
   getAllUsers,
+  logInteraction,
 };

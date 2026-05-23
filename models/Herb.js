@@ -81,9 +81,23 @@ const herbSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    saleUpdatedAt: {
+      type: Date,
+      default: null,
+    },
     salePrice: {
       type: Number,
       default: null,
+    },
+    ratings: [
+      {
+        userId: { type: String, required: true },
+        rating: { type: Number, required: true, min: 1, max: 5 },
+      },
+    ],
+    salesCount: {
+      type: Number,
+      default: 0,
     },
   },
   { timestamps: true }

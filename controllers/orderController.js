@@ -1,5 +1,6 @@
 const Order = require("../models/Order");
 const Herb = require("../models/Herb");
+const User = require("../models/User");
 
 const createOrder = async (req, res) => {
   try {
@@ -8,6 +9,8 @@ const createOrder = async (req, res) => {
     if (!buyerId || !storeOwnerId || !items || items.length === 0) {
       return res.status(400).json({ message: "Missing order data" });
     }
+
+    const user = await User.findById(buyerId);
 
     for (const item of items) {
       const herb = await Herb.findById(item.herbId);
@@ -23,8 +26,21 @@ const createOrder = async (req, res) => {
       }
 
       herb.quantity -= item.quantity;
+      if (herb.salesCount === undefined) herb.salesCount = 0;
+      herb.salesCount += item.quantity;
       await herb.save();
+
+      if (user) {
+        const prefIndex = user.herbPreferences.findIndex(p => p.herbId === item.herbId);
+        if (prefIndex !== -1) {
+          user.herbPreferences[prefIndex].score += 5;
+        } else {
+          user.herbPreferences.push({ herbId: item.herbId, score: 5 });
+        }
+      }
     }
+
+    if (user) await user.save();
 
     const order = await Order.create({
       buyerId,

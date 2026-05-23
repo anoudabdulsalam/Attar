@@ -52,6 +52,13 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+    herbPreferences: [
+      {
+        herbId: { type: String, required: true },
+        score: { type: Number, default: 0 },
+      },
+    ],
   },
   { timestamps: true }
 );

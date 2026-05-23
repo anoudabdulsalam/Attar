@@ -41,6 +41,7 @@ const addHerb = async (req, res) => {
       storeName,
       onSale,
       salePrice,
+      saleUpdatedAt: onSale ? new Date() : null,
     });
 
     await newHerb.save();
@@ -100,9 +101,14 @@ const getHerbById = async (req, res) => {
 // Update herb by ID
 const updateHerb = async (req, res) => {
   try {
+    const updateData = { ...req.body };
+    if (updateData.onSale === true) {
+      updateData.saleUpdatedAt = new Date();
+    }
+
     const updatedHerb = await Herb.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      updateData,
       { new: true, runValidators: true }
     );
 
@@ -185,6 +191,49 @@ const addCommentToHerb = async (req, res) => {
     });
   }
 };
+
+const rateHerb = async (req, res) => {
+  try {
+    const { userId, rating } = req.body;
+
+    if (!userId || !rating || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        message: "Valid userId and rating (1-5) are required",
+      });
+    }
+
+    const herb = await Herb.findById(req.params.id);
+
+    if (!herb) {
+      return res.status(404).json({
+        message: "Herb not found",
+      });
+    }
+
+    const existingRatingIndex = herb.ratings.findIndex(
+      (r) => r.userId === userId
+    );
+
+    if (existingRatingIndex !== -1) {
+      herb.ratings[existingRatingIndex].rating = rating;
+    } else {
+      herb.ratings.push({ userId, rating });
+    }
+
+    await herb.save();
+
+    res.status(200).json({
+      message: "Herb rated successfully",
+      herb,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   addHerb,
   getAllHerbs,
@@ -192,4 +241,5 @@ module.exports = {
   updateHerb,
   deleteHerb,
   addCommentToHerb,
+  rateHerb,
 };
