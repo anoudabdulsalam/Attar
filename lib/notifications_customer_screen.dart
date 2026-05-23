@@ -1,21 +1,45 @@
 import 'package:flutter/material.dart';
+import 'services/mock_notification_service.dart';
+import 'widgets/notification_tile.dart';
 
-class NotificationsCustomerScreen extends StatelessWidget {
+class NotificationsCustomerScreen extends StatefulWidget {
   const NotificationsCustomerScreen({super.key});
 
   @override
+  State<NotificationsCustomerScreen> createState() => _NotificationsCustomerScreenState();
+}
+
+class _NotificationsCustomerScreenState extends State<NotificationsCustomerScreen> {
+  @override
   Widget build(BuildContext context) {
+    final notifications = MockNotificationService().getCustomerAndExpertNotifications();
     return Column(
       key: const ValueKey('NotificationsScreen'),
       children: [
         _buildHeader(context, 'الإشعارات'),
-        const Expanded(
-          child: Center(
-            child: Text(
-              'الإشعارات',
-              style: TextStyle(color: Colors.white, fontSize: 24),
-            ),
-          ),
+        Expanded(
+          child: notifications.isEmpty
+              ? const Center(
+                  child: Text(
+                    'لا توجد إشعارات',
+                    style: TextStyle(color: Colors.white, fontSize: 24),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(top: 10, bottom: 20),
+                  itemCount: notifications.length,
+                  itemBuilder: (context, index) {
+                    final notification = notifications[index];
+                    return NotificationTile(
+                      notification: notification,
+                      onTap: () {
+                        setState(() {
+                          MockNotificationService().markAsRead(notification.id);
+                        });
+                      },
+                    );
+                  },
+                ),
         ),
       ],
     );

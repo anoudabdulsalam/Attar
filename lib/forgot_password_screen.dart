@@ -23,48 +23,44 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   void _sendCode() async {
-  if (emailController.text.trim().isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('يرجى إدخال البريد الإلكتروني')),
-    );
-    return;
-  }
-
-  setState(() {
-    isLoading = true;
-  });
-
-  try {
-    await PasswordService.sendCode(
-      emailController.text.trim(),
-    );
-
-    if (!mounted) return;
+    if (emailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى إدخال البريد الإلكتروني')),
+      );
+      return;
+    }
 
     setState(() {
-      isLoading = false;
+      isLoading = true;
     });
 
-    Navigator.push(
-      context,
-      FadePageRoute(
-        page: OtpVerificationScreen(
-          email: emailController.text.trim(),
+    try {
+      await PasswordService.sendCode(emailController.text.trim());
+
+      if (!mounted) return;
+
+      setState(() {
+        isLoading = false;
+      });
+
+      Navigator.push(
+        context,
+        FadePageRoute(
+          page: OtpVerificationScreen(email: emailController.text.trim()),
         ),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
+      );
+    } catch (e) {
+      if (!mounted) return;
 
-    setState(() {
-      isLoading = false;
-    });
+      setState(() {
+        isLoading = false;
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(e.toString())),
-    );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +121,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              'أدخل بريدك الإلكتروني وسنرسل لك رمزاً مكوناً من 3 أرقام لإعادة تعيين كلمة المرور.',
+                              'أدخل بريدك الإلكتروني وسنرسل لك رمزاً مكوناً من 6 أرقام لإعادة تعيين كلمة المرور.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 16,
