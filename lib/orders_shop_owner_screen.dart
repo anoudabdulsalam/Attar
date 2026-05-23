@@ -57,11 +57,14 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
       final storeOwnerId = prefs.getString('userId') ?? '';
 
       final orders = await OrderService.getOrdersByStoreOwner(storeOwnerId);
-
+      final activeOrders = orders.where((order) {
+        final status = (order['status'] ?? '').toString();
+        return status != 'تم الاستلام';
+      }).toList();
       if (!mounted) return;
 
       setState(() {
-        _orders = orders;
+        _orders = activeOrders;
         _isLoading = false;
       });
     } catch (e) {
@@ -76,10 +79,7 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
 
   Future<void> _updateStatus(String orderId, String status) async {
     try {
-      await OrderService.updateOrderStatus(
-        orderId: orderId,
-        status: status,
-      );
+      await OrderService.updateOrderStatus(orderId: orderId, status: status);
 
       if (!mounted) return;
 
@@ -91,9 +91,9 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('فشل تحديث الطلب: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('فشل تحديث الطلب: $e')));
     }
   }
 
@@ -102,9 +102,7 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
     return Column(
       children: [
         _buildTopAppBar(),
-        Expanded(
-          child: _buildBody(),
-        ),
+        Expanded(child: _buildBody()),
       ],
     );
   }
@@ -253,35 +251,54 @@ class _OrdersShopOwnerScreenState extends State<OrdersShopOwnerScreen> {
           ),
           const SizedBox(height: 12),
 
-          DropdownButtonFormField<String>(
-            initialValue: status,
-            decoration: InputDecoration(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 0,
-              ),
-              border: OutlineInputBorder(
+          if (status == 'تم الاستلام')
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFDAF1DE),
                 borderRadius: BorderRadius.circular(10),
               ),
-              filled: true,
-              fillColor: const Color(0xFFDAF1DE),
+              child: const Text(
+                'الحالة: تم الاستلام',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: Colors.green,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            )
+          else
+            DropdownButtonFormField<String>(
+              initialValue: status,
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 0,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                filled: true,
+                fillColor: const Color(0xFFDAF1DE),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'قيد التحضير',
+                  child: Text('قيد التحضير'),
+                ),
+                DropdownMenuItem(
+                  value: 'جاهز ومع شركة التوصيل',
+                  child: Text('جاهز ومع شركة التوصيل'),
+                ),
+              ],
+              onChanged: (val) {
+                if (val != null && val != status) {
+                  _updateStatus(order['_id'], val);
+                }
+              },
             ),
-            items: const [
-              DropdownMenuItem(
-                value: 'قيد التحضير',
-                child: Text('قيد التحضير'),
-              ),
-              DropdownMenuItem(
-                value: 'جاهز ومع شركة التوصيل',
-                child: Text('جاهز ومع شركة التوصيل'),
-              ),
-            ],
-            onChanged: (val) {
-              if (val != null && val != status) {
-                _updateStatus(order['_id'], val);
-              }
-            },
-          ),
         ],
       ),
     );

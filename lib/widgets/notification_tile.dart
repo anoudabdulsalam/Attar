@@ -42,6 +42,7 @@ class NotificationTile extends StatelessWidget {
             howToUse: notification.herbPayload!['howToUse'] ?? '',
             price: notification.herbPayload!['price'] ?? '',
             storeName: notification.herbPayload!['storeName'] ?? '',
+            storeOwnerId: notification.herbPayload!['storeOwnerId'],
             onSale: notification.herbPayload!['onSale'] ?? false,
             salePrice: notification.herbPayload!['salePrice'],
             comments: notification.herbPayload!['comments'] ?? [],

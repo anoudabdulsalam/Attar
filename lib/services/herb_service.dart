@@ -4,15 +4,17 @@ import 'api_config.dart';
 
 class HerbService {
   static Future<List<dynamic>> getAllHerbs() async {
-    final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs');
+    final response = await http.get(
+      Uri.parse('${ApiConfig.baseUrl}/api/herbs'),
+      headers: {'Content-Type': 'application/json'},
+    );
 
-    final response = await http.get(url);
     final data = jsonDecode(response.body);
 
     if (response.statusCode == 200) {
       return data['herbs'] ?? [];
     } else {
-      throw Exception(data['message'] ?? 'Failed to fetch herbs');
+      throw Exception(data['message'] ?? 'Failed to load herbs');
     }
   }
 
@@ -30,33 +32,102 @@ class HerbService {
   }
 
   static Future<Map<String, dynamic>> addComment({
-  required String herbId,
-  required String userId,
-  required String userName,
-  required String userRole,
-  required String text,
-}) async {
-  final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs/$herbId/comments');
+    required String herbId,
+    required String userId,
+    required String userName,
+    required String userRole,
+    required String text,
+  }) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs/$herbId/comments');
 
-  final response = await http.post(
-    url,
-    headers: {'Content-Type': 'application/json'},
-    body: jsonEncode({
-      'userId': userId,
-      'userName': userName,
-      'userRole': userRole,
-      'text': text,
-    }),
-  );
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': userId,
+        'userName': userName,
+        'userRole': userRole,
+        'text': text,
+      }),
+    );
 
-  final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body);
 
-  if (response.statusCode == 200) {
-    return data['herb'];
-  } else {
-    throw Exception(data['message'] ?? 'Failed to add comment');
+    if (response.statusCode == 200) {
+      return data['herb'];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to add comment');
+    }
   }
-}
+
+  static Future<Map<String, dynamic>> likeComment({
+    required String herbId,
+    required String commentId,
+    required String userId,
+  }) async {
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/api/herbs/$herbId/comments/$commentId/like',
+    );
+
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'userId': userId}),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data['herb'];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to like comment');
+    }
+  }
+
+  static Future<Map<String, dynamic>> replyToComment({
+    required String herbId,
+    required String commentId,
+    required String userId,
+    required String userName,
+    required String userRole,
+    required String text,
+  }) async {
+    final url = Uri.parse(
+      '${ApiConfig.baseUrl}/api/herbs/$herbId/comments/$commentId/reply',
+    );
+
+    final response = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'userId': userId,
+        'userName': userName,
+        'userRole': userRole,
+        'text': text,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data['herb'];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to reply to comment');
+    }
+  }
+
+  static Future<List<dynamic>> getHerbsByOwnerId(String ownerId) async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/herbs/owner/$ownerId');
+
+    final response = await http.get(url);
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return data['herbs'] ?? [];
+    } else {
+      throw Exception(data['message'] ?? 'Failed to fetch herbs for owner');
+    }
+  }
 
   static Future<Map<String, dynamic>> addHerb({
     required String name,
@@ -162,10 +233,7 @@ class HerbService {
     final response = await http.post(
       url,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'userId': userId,
-        'rating': rating,
-      }),
+      body: jsonEncode({'userId': userId, 'rating': rating}),
     );
 
     final data = jsonDecode(response.body);

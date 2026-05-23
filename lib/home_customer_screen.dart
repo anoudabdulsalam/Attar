@@ -279,7 +279,7 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
         'price': '${herb.price.toStringAsFixed(0)} ₪',
         'category': _mapCategoryToArabic(herb.category),
         'isFavorite': _favoriteStatus[herb.id] ?? false,
-        'rating': _ratings[herb.id] ?? _calculateAverageRating(herb.ratings),
+        'rating': _calculateAverageRating(herb.ratings),
         'description': herb.description,
         'scientificName': herb.scientificName,
         'season': herb.season,
@@ -313,21 +313,34 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
   }
 
   int _calculateAverageRating(List<dynamic>? ratings) {
-    if (ratings == null || ratings.isEmpty) return 1;
+    if (ratings == null || ratings.isEmpty) return 0;
+
     double sum = 0;
+
     for (var r in ratings) {
-      sum += (r is Map ? r['rating'] : r) ?? 0;
+      if (r is Map && r['rating'] != null) {
+        sum += double.tryParse(r['rating'].toString()) ?? 0;
+      } else {
+        sum += double.tryParse(r.toString()) ?? 0;
+      }
     }
+
     return (sum / ratings.length).round();
   }
 
   int _getHerbScore(Map<String, dynamic> plant) {
     int score = 0;
 
-    score += (plant['salesCount'] ?? 0) as int;
+    score += ((plant['salesCount'] ?? 0) as num).toInt() * 4;
 
     final avgRating = _calculateAverageRating(plant['ratings']);
-    score += avgRating * 10;
+    score += avgRating * 20;
+
+    score += _getUserPreferenceScore(plant['id']) * 10;
+
+    if (_favoriteStatus[plant['id']] == true) {
+      score += 200;
+    }
 
     final favoritePlants = _apiPlants
         .where((p) => _favoriteStatus[p['id']] == true)
@@ -349,6 +362,8 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
         }
       }
     }
+
+    score += DateTime.now().microsecond % 25;
 
     return score;
   }
@@ -381,23 +396,23 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
         return name.contains(_searchQuery.trim().toLowerCase());
       }).toList();
     }
-
     plants.sort((a, b) {
+      final now = DateTime.now().toUtc();
+
       bool isARecentSale =
           a['onSale'] == true &&
           a['saleUpdatedAt'] != null &&
-          DateTime.now()
-                  .toUtc()
+          now
                   .difference(
                     DateTime.tryParse(a['saleUpdatedAt']) ?? DateTime(1970),
                   )
                   .inHours <
               1;
+
       bool isBRecentSale =
           b['onSale'] == true &&
           b['saleUpdatedAt'] != null &&
-          DateTime.now()
-                  .toUtc()
+          now
                   .difference(
                     DateTime.tryParse(b['saleUpdatedAt']) ?? DateTime(1970),
                   )
@@ -407,22 +422,18 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
       if (isARecentSale && !isBRecentSale) return -1;
       if (!isARecentSale && isBRecentSale) return 1;
 
-      DateTime timeA =
-          DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime(1970);
-      DateTime timeB =
-          DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime(1970);
-      bool isANew = DateTime.now().toUtc().difference(timeA).inHours < 1;
-      bool isBNew = DateTime.now().toUtc().difference(timeB).inHours < 1;
+      final timeA = DateTime.tryParse(a['createdAt'] ?? '') ?? DateTime(1970);
+      final timeB = DateTime.tryParse(b['createdAt'] ?? '') ?? DateTime(1970);
+
+      bool isANew = now.difference(timeA).inHours < 1;
+      bool isBNew = now.difference(timeB).inHours < 1;
 
       if (isANew && !isBNew) return -1;
       if (!isANew && isBNew) return 1;
 
-      int prefA = _getUserPreferenceScore(a['id']);
-      int prefB = _getUserPreferenceScore(b['id']);
-      if (prefA != prefB) return prefB.compareTo(prefA);
+      final scoreA = _getHerbScore(a);
+      final scoreB = _getHerbScore(b);
 
-      int scoreA = _getHerbScore(a);
-      int scoreB = _getHerbScore(b);
       return scoreB.compareTo(scoreA);
     });
 
@@ -464,19 +475,23 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
     });
   }
 
-  void _removeFromCart(String name) {
+  void _removeFromCart(String id) {
     setState(() {
-      _cartItems.removeWhere((item) => item['name'] == name);
+      _cartItems.removeWhere((item) => item['id'].toString() == id);
     });
   }
 
-  void _updateQuantity(String name, int change) {
+  void _updateQuantity(String id, int newQuantity) {
     setState(() {
-      final index = _cartItems.indexWhere((item) => item['name'] == name);
+      final index = _cartItems.indexWhere(
+        (item) => item['id'].toString() == id,
+      );
+
       if (index != -1) {
-        _cartItems[index]['quantity'] += change;
-        if (_cartItems[index]['quantity'] <= 0) {
+        if (newQuantity <= 0) {
           _cartItems.removeAt(index);
+        } else {
+          _cartItems[index]['quantity'] = newQuantity;
         }
       }
     });
@@ -786,6 +801,15 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
           onRemove: _removeFromCart,
           onUpdateQuantity: _updateQuantity,
           totalPrice: _cartTotal,
+          onRatingSubmitted: () async {
+            await fetchHerbs();
+
+            if (!mounted) return;
+
+            setState(() {
+              _selectedIndex = 2;
+            });
+          },
         );
       case 5:
         return const AboutUsHomeScreen();
@@ -804,22 +828,7 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
             }
           },
           onAddToCart: _addToCart,
-          onRatingChanged: (name, rating) async {
-            final plant = _filteredPlants.firstWhere(
-              (p) => p['name'] == name,
-              orElse: () => {},
-            );
-            if (plant.isNotEmpty && _currentUserId.isNotEmpty) {
-              setState(() {
-                _ratings[plant['id']] = rating;
-              });
-              await HerbService.rateHerb(
-                herbId: plant['id'],
-                userId: _currentUserId,
-                rating: rating,
-              );
-            }
-          },
+          onRatingChanged: (name, rating) {},
           onShareTap: (name) {
             final plantIndex = _filteredPlants.indexWhere(
               (p) => p['name'] == name,
@@ -1092,7 +1101,20 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
             setState(() {
               _searchQuery = value;
             });
+            if (_currentUserId.isNotEmpty && value.trim().length >= 2) {
+              for (final plant in _apiPlants) {
+                final name = plant['name'].toString();
+                if (name.contains(value.trim())) {
+                  UserService.logInteraction(
+                    _currentUserId,
+                    plant['id'],
+                    'search',
+                  );
+                }
+              }
+            }
           },
+
           decoration: InputDecoration(
             hintText: 'ابحث عن عشبتك المفضلة...',
             hintStyle: const TextStyle(color: Colors.grey),
@@ -1215,6 +1237,7 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
           children: _filteredPlants.map((plant) {
             return HerbCard(
               herbId: plant['id'],
+              storeOwnerId: plant['storeOwnerId'] ?? '',
               imageUrl: plant['imageUrl'],
               name: plant['name'],
               benefits: plant['benefits'],
@@ -1223,23 +1246,13 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
               storeName: plant['storeName'],
               comments: plant['comments'] ?? [],
               isFavorite: plant['isFavorite'],
-              rating: plant['rating'] ?? 5,
+              rating: plant['rating'] ?? 0,
               onSale: plant['onSale'] ?? false,
               salePrice: plant['salePrice'],
               onFavoriteToggle: () => _toggleFavorite(plant['id']),
               onAddToCart: () => _addToCart(plant),
-              onRatingChanged: (newRating) async {
-                setState(() {
-                  _ratings[plant['id']] = newRating;
-                });
-                if (_currentUserId.isNotEmpty) {
-                  await HerbService.rateHerb(
-                    herbId: plant['id'],
-                    userId: _currentUserId,
-                    rating: newRating,
-                  );
-                }
-              },
+              onRatingChanged: (newRating) {},
+
               onShareTap: () => _showShareDialog(context, plant),
               onTap: () {
                 if (_currentUserId.isNotEmpty) {
@@ -1526,6 +1539,7 @@ class HerbCard extends StatefulWidget {
   final String storeName;
   final List<dynamic> comments;
   final VoidCallback? onTap;
+  final String storeOwnerId;
 
   const HerbCard({
     super.key,
@@ -1546,6 +1560,7 @@ class HerbCard extends StatefulWidget {
     required this.storeName,
     required this.comments,
     this.onTap,
+    required this.storeOwnerId,
   });
 
   @override
@@ -1576,6 +1591,7 @@ class _HerbCardState extends State<HerbCard> {
               barrierColor: Colors.black54,
               builder: (context) => HerbPostDialog(
                 herbId: widget.herbId,
+                storeOwnerId: widget.storeOwnerId,
                 imageUrl: widget.imageUrl,
                 name: widget.name,
                 benefits: widget.benefits,
@@ -1798,16 +1814,12 @@ class _HerbCardState extends State<HerbCard> {
                               ),
                             Row(
                               children: List.generate(5, (index) {
-                                return GestureDetector(
-                                  onTap: () =>
-                                      widget.onRatingChanged(index + 1),
-                                  child: Icon(
-                                    index < widget.rating
-                                        ? Icons.star
-                                        : Icons.star_border,
-                                    color: const Color(0xFFFFB400),
-                                    size: 16,
-                                  ),
+                                return Icon(
+                                  index < widget.rating
+                                      ? Icons.star
+                                      : Icons.star_border,
+                                  color: const Color(0xFFFFB400),
+                                  size: 16,
                                 );
                               }),
                             ),

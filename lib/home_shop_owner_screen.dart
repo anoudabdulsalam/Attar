@@ -318,8 +318,7 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
         'price': '${herb.price.toStringAsFixed(0)} ₪',
         'category': _mapCategoryToArabic(herb.category),
         'isFavorite': _favoriteStatus[herb.id] ?? false,
-        'rating':
-            _ratings[herb.id] ?? _calculateAverageRating(herb.ratings ?? []),
+        'rating': _calculateAverageRating(herb.ratings),
         'description': herb.description,
         'scientificName': herb.scientificName,
         'season': herb.season,
@@ -353,11 +352,18 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
   }
 
   int _calculateAverageRating(List<dynamic>? ratings) {
-    if (ratings == null || ratings.isEmpty) return 1;
+    if (ratings == null || ratings.isEmpty) return 0;
+
     double sum = 0;
+
     for (var r in ratings) {
-      sum += (r is Map ? r['rating'] : r) ?? 0;
+      if (r is Map && r['rating'] != null) {
+        sum += double.tryParse(r['rating'].toString()) ?? 0;
+      } else {
+        sum += double.tryParse(r.toString()) ?? 0;
+      }
     }
+
     return (sum / ratings.length).round();
   }
 
@@ -789,22 +795,7 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
             }
           },
           onAddToCart: (plant) {},
-          onRatingChanged: (name, rating) async {
-            final plant = _filteredPlants.firstWhere(
-              (p) => p['name'] == name,
-              orElse: () => {},
-            );
-            if (plant.isNotEmpty && _currentUserId.isNotEmpty) {
-              setState(() {
-                _ratings[plant['id']] = rating;
-              });
-              await HerbService.rateHerb(
-                herbId: plant['id'],
-                userId: _currentUserId,
-                rating: rating,
-              );
-            }
-          },
+          onRatingChanged: (name, rating) {},
           onShareTap: (name) {
             final plantIndex = _filteredPlants.indexWhere(
               (p) => p['name'] == name,
@@ -1221,6 +1212,7 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
           children: _filteredPlants.map((plant) {
             return HerbCard(
               herbId: plant['id'],
+              storeOwnerId: plant['storeOwnerId'] ?? '',
               imageUrl: plant['imageUrl'],
               name: plant['name'],
               benefits: plant['benefits'],
@@ -1229,23 +1221,12 @@ class _HomeShopOwnerScreenState extends State<HomeShopOwnerScreen> {
               storeName: plant['storeName'],
               comments: plant['comments'] ?? [],
               isFavorite: plant['isFavorite'],
-              rating: plant['rating'] ?? 5,
+              rating: plant['rating'] ?? 0,
               onSale: plant['onSale'] ?? false,
               salePrice: plant['salePrice'],
               onFavoriteToggle: () => _toggleFavorite(plant['id']),
               onAddToCart: () {},
-              onRatingChanged: (newRating) async {
-                setState(() {
-                  _ratings[plant['id']] = newRating;
-                });
-                if (_currentUserId.isNotEmpty) {
-                  await HerbService.rateHerb(
-                    herbId: plant['id'],
-                    userId: _currentUserId,
-                    rating: newRating,
-                  );
-                }
-              },
+              onRatingChanged: (newRating) {},
               onShareTap: () => _showShareDialog(context, plant),
               onTap: () {
                 if (_currentUserId.isNotEmpty) {
@@ -1414,6 +1395,7 @@ class HerbCard extends StatefulWidget {
   final ValueChanged<int> onRatingChanged;
   final VoidCallback onShareTap;
   final VoidCallback? onTap;
+  final String storeOwnerId;
 
   const HerbCard({
     super.key,
@@ -1434,6 +1416,7 @@ class HerbCard extends StatefulWidget {
     required this.onRatingChanged,
     required this.onShareTap,
     this.onTap,
+    required this.storeOwnerId,
   });
 
   @override
@@ -1464,6 +1447,7 @@ class _HerbCardState extends State<HerbCard> {
               barrierColor: Colors.black54,
               builder: (context) => HerbPostDialog(
                 herbId: widget.herbId,
+                storeOwnerId: widget.storeOwnerId,
                 imageUrl: widget.imageUrl,
                 name: widget.name,
                 benefits: widget.benefits,

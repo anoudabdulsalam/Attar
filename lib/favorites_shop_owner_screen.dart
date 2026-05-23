@@ -49,12 +49,13 @@ class FavoritesShopOwnerScreen extends StatelessWidget {
                     children: favoritePlants.map<Widget>((plant) {
                       return HerbCard(
                         imageUrl: plant['imageUrl'],
+                        storeOwnerId: plant['storeOwnerId'] ?? '',
                         name: plant['name'],
                         benefits: plant['benefits'],
                         howToUse: plant['howToUse'],
                         price: plant['price'],
                         isFavorite: plant['isFavorite'] ?? false,
-                        rating: plant['rating'] ?? 5,
+                        rating: (plant['averageRating'] as num?)?.round() ?? 1,
                         onFavoriteToggle: () => onFavoriteToggle(plant['name']),
                         onAddToCart: () => onAddToCart(plant),
                         onRatingChanged: (newRating) =>

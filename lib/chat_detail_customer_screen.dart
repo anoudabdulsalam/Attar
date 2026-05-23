@@ -352,6 +352,7 @@ class _ChatDetailCustomerScreenState extends State<ChatDetailCustomerScreen> {
               howToUse: plant['howToUse'] ?? plant['usageMethod'] ?? '',
               price: plant['price'].toString(),
               storeName: plant['storeName'] ?? 'متجر غير معروف',
+              storeOwnerId: plant['storeOwnerId'],
               onSale: plant['onSale'] ?? false,
               salePrice: plant['salePrice']?.toString(),
               comments: plant['comments'] ?? [],

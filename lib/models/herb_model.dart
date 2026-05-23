@@ -17,6 +17,7 @@ class HerbModel {
   final List<dynamic> comments;
   final List<dynamic> ratings;
   final int salesCount;
+  final double averageRating;
   final String createdAt;
   final String? saleUpdatedAt;
 
@@ -39,6 +40,7 @@ class HerbModel {
     required this.comments,
     required this.ratings,
     required this.salesCount,
+    required this.averageRating,
     required this.createdAt,
     this.saleUpdatedAt,
   });
@@ -63,6 +65,7 @@ class HerbModel {
       comments: json['comments'] ?? [],
       ratings: json['ratings'] ?? [],
       salesCount: (json['salesCount'] as num?)?.toInt() ?? 0,
+      averageRating: (json['averageRating'] as num?)?.toDouble() ?? 1.0,
       createdAt: json['createdAt']?.toString() ?? '',
       saleUpdatedAt: json['saleUpdatedAt']?.toString(),
     );
