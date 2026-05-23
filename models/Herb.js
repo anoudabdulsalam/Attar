@@ -71,6 +71,16 @@ const herbSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    likes: [{ type: String }],
+    replies: [
+      {
+        userId: { type: String, required: true },
+        userName: { type: String, required: true },
+        userRole: { type: String, required: true },
+        text: { type: String, required: true, trim: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     createdAt: {
       type: Date,
       default: Date.now,
@@ -98,6 +108,10 @@ const herbSchema = new mongoose.Schema(
     salesCount: {
       type: Number,
       default: 0,
+    },
+    averageRating: {
+      type: Number,
+      default: 1,
     },
   },
   { timestamps: true }

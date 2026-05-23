@@ -11,6 +11,8 @@ const {
   deleteHerb,
   addCommentToHerb,
   rateHerb,
+  likeComment,
+  replyToComment,
 } = require("../controllers/herbController");
 
 router.post("/", addHerb);
@@ -39,6 +41,8 @@ router.get("/:id", getHerbById);
 router.put("/:id", updateHerb);
 router.delete("/:id", deleteHerb);
 router.post("/:id/comments", addCommentToHerb);
+router.post("/:id/comments/:commentId/like", likeComment);
+router.post("/:id/comments/:commentId/reply", replyToComment);
 router.post("/:id/rate", rateHerb);
 
 module.exports = router;

@@ -26,6 +26,10 @@ const orderItemSchema = new mongoose.Schema(
       required: true,
       default: 0,
     },
+    storeName: {
+      type: String,
+      trim: true,
+    },
   },
   { _id: false }
 );
@@ -72,6 +76,11 @@ const orderSchema = new mongoose.Schema(
       type: String,
       enum: ["قيد التحضير", "جاهز ومع شركة التوصيل", "تم الاستلام"],
       default: "قيد التحضير",
+    },
+
+    receivedAt: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
