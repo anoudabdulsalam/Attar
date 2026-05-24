@@ -184,10 +184,9 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
     try {
       final allUsers = await UserService.getAllUsers();
       final users = allUsers.where((user) {
-        if (_currentUserRole == 'customer' && user['role'] == 'customer') {
-          return false;
-        }
-        return true;
+        final role = user['role']?.toString() ?? '';
+
+        return role == 'store_owner' || role == 'herbal_expert';
       }).toList();
 
       if (!mounted) return;
@@ -463,8 +462,10 @@ class _HerbPostDialogState extends State<HerbPostDialog> {
           ),
           TextButton(
             onPressed: () async {
-              if (replyController.text.trim().isEmpty || _currentUserId == null)
+              if (replyController.text.trim().isEmpty ||
+                  _currentUserId == null) {
                 return;
+              }
 
               Navigator.pop(context);
 
