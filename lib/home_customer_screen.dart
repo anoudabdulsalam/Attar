@@ -531,6 +531,12 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               final filtered = users.where((user) {
+                final role = user['role']?.toString() ?? '';
+
+                if (role != 'store_owner' && role != 'herbal_expert') {
+                  return false;
+                }
+
                 final name =
                     (user['fullName'] ??
                             user['ownerName'] ??
@@ -538,6 +544,7 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
                             user['email'] ??
                             '')
                         .toString();
+
                 return name.contains(searchQuery);
               }).toList();
 
