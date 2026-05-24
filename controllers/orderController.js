@@ -4,15 +4,7 @@ const User = require("../models/User");
 
 const createOrder = async (req, res) => {
   try {
-    const {
-      buyerId,
-      buyerName,
-      buyerRole,
-      storeOwnerId,
-      storeName,
-      items,
-      totalPrice,
-    } = req.body;
+    const { buyerId, buyerName, buyerRole, storeOwnerId, storeName, items, totalPrice } = req.body;
 
     if (!buyerId || !storeOwnerId || !items || items.length === 0) {
       return res.status(400).json({ message: "Missing order data" });
@@ -82,10 +74,9 @@ const createOrder = async (req, res) => {
       buyerRole,
       storeOwnerId,
       storeName,
-      items: normalizedItems,
+      items,
       totalPrice,
       status: "قيد التحضير",
-      receivedAt: null,
     });
 
     res.status(201).json({

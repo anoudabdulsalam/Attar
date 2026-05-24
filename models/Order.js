@@ -36,6 +36,11 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
+    orderNumber: {
+      type: String,
+      trim: true,
+    },
+
     buyerId: {
       type: String,
       required: true,
@@ -72,6 +77,27 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    discount: {
+      type: Number,
+      default: 0,
+    },
+
+    expenses: {
+      type: Number,
+      default: 0,
+    },
+
+    paymentMethod: {
+      type: String,
+      default: "غير محدد",
+    },
+
+    paymentStatus: {
+      type: String,
+      enum: ["مدفوع", "قيد الانتظار", "غير مدفوع"],
+      default: "قيد الانتظار",
+    },
+
     status: {
       type: String,
       enum: ["قيد التحضير", "جاهز ومع شركة التوصيل", "تم الاستلام"],
@@ -85,5 +111,12 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+orderSchema.pre("save", function (next) {
+  if (!this.orderNumber) {
+    this.orderNumber = `INV-${Date.now().toString().slice(-6)}`;
+  }
+  next();
+});
 
 module.exports = mongoose.model("Order", orderSchema);
