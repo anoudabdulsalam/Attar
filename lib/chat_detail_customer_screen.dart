@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'herb_post_dialog.dart';
 import 'services/chat_service.dart';
+import 'services/notification_service.dart';
 
 class ChatDetailCustomerScreen extends StatefulWidget {
   final String receiverId;
@@ -169,6 +170,15 @@ class _ChatDetailCustomerScreenState extends State<ChatDetailCustomerScreen> {
         receiverId: widget.receiverId,
         receiverRole: widget.receiverRole,
         text: text,
+      );
+
+      await NotificationService.createNotification(
+        userId: widget.receiverId,
+        targetRole: widget.receiverRole,
+        title: 'رسالة جديدة',
+        body: 'وصلتك رسالة جديدة من ${widget.receiverName}',
+        type: 3,
+        senderName: widget.receiverName,
       );
     } catch (e) {
       debugPrint('SEND MESSAGE ERROR: $e');

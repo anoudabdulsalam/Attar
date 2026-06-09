@@ -5,6 +5,7 @@ import 'services/herb_service.dart';
 import 'services/cloudinary_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/user_service.dart';
+import 'services/notification_service.dart';
 
 class AddHerbDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onAdd;
@@ -88,7 +89,42 @@ class _AddHerbDialogState extends State<AddHerbDialog> {
         storeOwnerId: userId,
         storeName: storeName,
       );
+final users = await UserService.getAllUsers();
 
+for (final u in users) {
+  final receiverId = u['_id']?.toString() ?? '';
+  final receiverRole = u['role']?.toString() ?? '';
+
+  if (receiverId.isEmpty) continue;
+
+  if (receiverRole == 'customer' || receiverRole == 'herbal_expert') {
+    await NotificationService.createNotification(
+      userId: receiverId,
+      targetRole: receiverRole,
+      title: 'عشبة جديدة',
+      body: 'تمت إضافة عشبة ${_nameController.text.trim()} من متجر $storeName',
+      type: 1,
+      herbName: _nameController.text.trim(),
+      storeName: storeName,
+      price: '${_priceController.text.trim()} ₪',
+      imageUrl: uploadedImageUrl,
+      herbPayload: {
+        'herbId': herb['_id'],
+        'imageUrl': uploadedImageUrl.isNotEmpty
+            ? uploadedImageUrl
+            : 'assets/images/plant_placeholder.png',
+        'name': herb['name'] ?? _nameController.text.trim(),
+        'benefits': herb['benefits'] ?? _benefitsController.text.trim(),
+        'howToUse': herb['usageMethod'] ?? _usesController.text.trim(),
+        'price': '${herb['price'] ?? _priceController.text.trim()} ₪',
+        'storeName': storeName,
+        'storeOwnerId': userId,
+        'onSale': false,
+        'comments': [],
+      },
+    );
+  }
+}
       widget.onAdd({
         'id': herb['_id'],
         'imageUrl': uploadedImageUrl.isNotEmpty

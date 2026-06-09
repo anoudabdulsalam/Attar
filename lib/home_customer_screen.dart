@@ -1,8 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'dart:async';
-import 'services/mock_notification_service.dart';
 import 'widgets/top_notification_banner.dart';
 import 'widgets/notification_tile.dart';
 import 'smart_chat_screen.dart';
@@ -17,6 +15,7 @@ import 'services/favorite_service.dart';
 import 'about_us_home_screen.dart';
 import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
+import 'services/notification_service.dart';
 import 'package:flutter/foundation.dart';
 import 'herb_predictor.dart';
 import 'contact_us_customer_screen.dart';
@@ -54,113 +53,101 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
     'أعشاب عطرية',
     'أعشاب للطهي',
   ];
-
-  StreamSubscription? _notificationSubscription;
-
-  @override
   @override
   void initState() {
     super.initState();
     _checkInitialNotification();
-    _notificationSubscription = MockNotificationService().onNotificationReceived
-        .listen((notification) {
-          if (mounted) {
-            TopNotificationBanner.show(context, notification);
-          }
-        });
-    _loadUserPreferences();
+_loadUserPreferences();
     fetchHerbs();
     _loadChatUnreadCount();
   }
 
   @override
   void dispose() {
-    _notificationSubscription?.cancel();
-    super.dispose();
+super.dispose();
   }
 
   Future<void> _checkInitialNotification() async {
-    final prefs = await SharedPreferences.getInstance();
+  try {
+    final notifications =
+        await NotificationService.getNotifications('customer');
 
-    final hasShown =
-        prefs.getBool('has_shown_login_notification_customer') ?? false;
+    final unreadNotifications =
+        notifications.where((n) => n.isRead == false).take(3).toList();
 
-    if (!hasShown) {
-      final notifications = MockNotificationService()
-          .getCustomerAndExpertNotifications();
+    if (unreadNotifications.isEmpty) return;
 
-      if (notifications.isNotEmpty) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
 
-          if (kIsWeb) {
-            showDialog(
-              context: context,
-              barrierColor: Colors.transparent,
-              builder: (context) => Align(
-                alignment: Alignment.bottomLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 100, left: 16),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: SizedBox(
-                      width: 320,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: notifications
-                            .take(3)
-                            .map(
-                              (n) => Stack(
-                                children: [
-                                  NotificationTile(
-                                    notification: n,
-                                    onTap: () {
-                                      Navigator.pop(context);
-                                    },
-                                  ),
-                                  Positioned(
-                                    top: 18,
-                                    left: 25,
-                                    child: GestureDetector(
-                                      onTap: () => Navigator.pop(context),
-                                      child: const Icon(
-                                        Icons.close,
-                                        size: 16,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    ),
+      final list = unreadNotifications;
+
+      if (kIsWeb) {
+        showDialog(
+          context: context,
+          barrierColor: Colors.transparent,
+          builder: (context) => Align(
+            alignment: Alignment.bottomLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 100, left: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: SizedBox(
+                  width: 320,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: list.map((n) => Stack(
+                      children: [
+                        NotificationTile(
+                          notification: n,
+                          onTap: () async {
+                            await NotificationService.markAsRead(n.id);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                        ),
+                        Positioned(
+                          top: 18,
+                          left: 25,
+                          child: GestureDetector(
+                            onTap: () async {
+                              await NotificationService.markAsRead(n.id);
+                              if (context.mounted) Navigator.pop(context);
+                            },
+                            child: const Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                      ],
+                    )).toList(),
                   ),
                 ),
               ),
-            );
-          } else {
-            Future.delayed(const Duration(milliseconds: 800), () {
-              if (!mounted) return;
+            ),
+          ),
+        );
+      } else {
+        Future.delayed(const Duration(milliseconds: 800), () async {
+          if (!mounted) return;
 
-              final list = notifications.take(3).toList();
-
-              for (int i = 0; i < list.length; i++) {
-                Future.delayed(Duration(milliseconds: i * 900), () {
-                  if (mounted) {
-                    TopNotificationBanner.show(context, list[i]);
-                  }
-                });
+          for (int i = 0; i < list.length; i++) {
+            Future.delayed(Duration(milliseconds: i * 900), () {
+              if (mounted) {
+                TopNotificationBanner.show(context, list[i]);
               }
             });
           }
-
-          await prefs.setBool('has_shown_login_notification_customer', true);
         });
       }
-    }
+
+     
+    });
+  } catch (e) {
+    debugPrint('LOAD INITIAL NOTIFICATIONS ERROR: $e');
   }
+}
 
   List<dynamic> _herbPreferences = [];
   String _currentUserId = '';
@@ -666,6 +653,15 @@ class _HomeCustomerScreenState extends State<HomeCustomerScreen> {
                                       type: 'post',
                                       herb: plant,
                                     );
+                                    
+                                    await NotificationService.createNotification(
+                                    userId: receiverId,
+                                    targetRole: receiverRole,
+                                    title: 'رسالة جديدة',
+                                    body: 'وصلتك رسالة جديدة',
+                                    type: 3,
+                                    senderName: 'مستخدم',
+                                  );
 
                                     if (!context.mounted) return;
 

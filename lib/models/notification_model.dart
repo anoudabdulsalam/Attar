@@ -2,7 +2,7 @@ class NotificationModel {
   final String id;
   final String title;
   final String body;
-  final int type; // 1: New Herb, 2: Order Status, 3: New Message, 4: New Order (Store), 5: Discount/Offer
+  final int type;
   final String? herbName;
   final String? imageUrl;
   final String? storeName;
@@ -12,7 +12,7 @@ class NotificationModel {
   final String? senderName;
   final DateTime createdAt;
   bool isRead;
-  final Map<String, dynamic>? herbPayload; // Used to pass data to HerbPostDialog
+  final Map<String, dynamic>? herbPayload;
 
   NotificationModel({
     required this.id,
@@ -30,4 +30,26 @@ class NotificationModel {
     this.isRead = false,
     this.herbPayload,
   });
+
+  factory NotificationModel.fromJson(Map<String, dynamic> json) {
+    return NotificationModel(
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      title: json['title']?.toString() ?? '',
+      body: json['body']?.toString() ?? '',
+      type: (json['type'] as num?)?.toInt() ?? 1,
+      herbName: json['herbName']?.toString(),
+      imageUrl: json['imageUrl']?.toString(),
+      storeName: json['storeName']?.toString(),
+      price: json['price']?.toString(),
+      originalPrice: json['originalPrice']?.toString(),
+      offerPrice: json['offerPrice']?.toString(),
+      senderName: json['senderName']?.toString(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      isRead: json['isRead'] ?? false,
+      herbPayload: json['herbPayload'] is Map
+          ? Map<String, dynamic>.from(json['herbPayload'])
+          : null,
+    );
+  }
 }

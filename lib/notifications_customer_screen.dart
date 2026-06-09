@@ -1,45 +1,89 @@
 import 'package:flutter/material.dart';
-import 'services/mock_notification_service.dart';
 import 'widgets/notification_tile.dart';
+import 'services/notification_service.dart';
 
 class NotificationsCustomerScreen extends StatefulWidget {
   const NotificationsCustomerScreen({super.key});
 
   @override
-  State<NotificationsCustomerScreen> createState() => _NotificationsCustomerScreenState();
+  State<NotificationsCustomerScreen> createState() =>
+      _NotificationsCustomerScreenState();
 }
 
-class _NotificationsCustomerScreenState extends State<NotificationsCustomerScreen> {
+class _NotificationsCustomerScreenState
+    extends State<NotificationsCustomerScreen> {
+  late Future<List<dynamic>> notificationsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    notificationsFuture = NotificationService.getNotifications('customer');
+  }
+
+  void refreshNotifications() {
+    setState(() {
+      notificationsFuture = NotificationService.getNotifications('customer');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final notifications = MockNotificationService().getCustomerAndExpertNotifications();
     return Column(
       key: const ValueKey('NotificationsScreen'),
       children: [
         _buildHeader(context, 'الإشعارات'),
         Expanded(
-          child: notifications.isEmpty
-              ? const Center(
+          child: FutureBuilder<List<dynamic>>(
+            future: notificationsFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFFDAF1DE),
+                  ),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Center(
+                  child: Text(
+                    'حدث خطأ أثناء تحميل الإشعارات',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                    ),
+                  ),
+                );
+              }
+
+              final notifications = snapshot.data ?? [];
+
+              if (notifications.isEmpty) {
+                return const Center(
                   child: Text(
                     'لا توجد إشعارات',
                     style: TextStyle(color: Colors.white, fontSize: 24),
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(top: 10, bottom: 20),
-                  itemCount: notifications.length,
-                  itemBuilder: (context, index) {
-                    final notification = notifications[index];
-                    return NotificationTile(
-                      notification: notification,
-                      onTap: () {
-                        setState(() {
-                          MockNotificationService().markAsRead(notification.id);
-                        });
-                      },
-                    );
-                  },
-                ),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.only(top: 10, bottom: 20),
+                itemCount: notifications.length,
+                itemBuilder: (context, index) {
+                  final notification = notifications[index];
+
+                  return NotificationTile(
+                    notification: notification,
+                    onTap: () async {
+                      await NotificationService.markAsRead(notification.id);
+                      refreshNotifications();
+                    },
+                  );
+                },
+              );
+            },
+          ),
         ),
       ],
     );
@@ -65,8 +109,11 @@ class _NotificationsCustomerScreenState extends State<NotificationsCustomerScree
                 height: 50,
                 width: 70,
                 fit: BoxFit.contain,
-                errorBuilder: (_, _, _) =>
-                    const Icon(Icons.eco, color: Color(0xFF163832), size: 40),
+                errorBuilder: (_, _, _) => const Icon(
+                  Icons.eco,
+                  color: Color(0xFF163832),
+                  size: 40,
+                ),
               ),
             ],
           ),
