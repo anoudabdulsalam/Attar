@@ -23,6 +23,8 @@ app.use("/api/chat", chatRoutes);
 app.get("/", (req, res) => {
   res.json({ message: "Attar backend is running" });
 });
+const notificationRoutes = require("./routes/notificationRoutes");
+app.use("/api/notifications", notificationRoutes);
 
 const PORT = process.env.PORT || 5000;
 
