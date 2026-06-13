@@ -4,60 +4,80 @@ const User = require("../models/User");
 
 const createOrder = async (req, res) => {
   try {
-    const { buyerId, buyerName, buyerRole, storeOwnerId, storeName, items, totalPrice } = req.body;
+    const {
+      buyerId,
+      buyerName,
+      buyerRole,
+      storeOwnerId,
+      storeName,
+      items,
+      totalPrice,
+    } = req.body;
 
     if (!buyerId || !storeOwnerId || !items || items.length === 0) {
-      return res.status(400).json({ message: "Missing order data" });
+      return res.status(400).json({
+        message: "Missing order data",
+      });
     }
 
     const user = await User.findById(buyerId);
 
+    if (user && !Array.isArray(user.herbPreferences)) {
+      user.herbPreferences = [];
+    }
+
     const normalizedItems = [];
 
     for (const item of items) {
-      const herb = await Herb.findById(item.herbId);
+      const herbId = item.herbId || item.id;
 
-      if (!herb) {
-        return res.status(404).json({
-          message: `Herb not found: ${item.herbName}`,
+      if (!herbId) {
+        return res.status(400).json({
+          message: `Missing herbId for item: ${item.herbName || item.name || ""}`,
         });
       }
 
-      if (herb.quantity < item.quantity) {
+      const herb = await Herb.findById(herbId);
+
+      if (!herb) {
+        return res.status(404).json({
+          message: `Herb not found: ${item.herbName || item.name || herbId}`,
+        });
+      }
+
+      const requestedQty = Number(item.quantity || 1);
+
+      if (Number(herb.quantity || 0) < requestedQty) {
         return res.status(400).json({
           message: `الكمية غير كافية من ${herb.name}`,
         });
       }
 
-      herb.quantity -= item.quantity;
-
-      if (herb.salesCount === undefined) {
-        herb.salesCount = 0;
-      }
-
-      herb.salesCount += item.quantity;
+      herb.quantity = Number(herb.quantity || 0) - requestedQty;
+      herb.salesCount = Number(herb.salesCount || 0) + requestedQty;
 
       await herb.save();
 
       normalizedItems.push({
-        herbId: item.herbId,
-        herbName: item.herbName || herb.name,
+        herbId: herbId,
+        herbName: item.herbName || item.name || herb.name,
         imageUrl: item.imageUrl || herb.imageUrl || "",
-        quantity: item.quantity,
-        price: item.price || herb.price || 0,
+        quantity: requestedQty,
+        price: Number(item.price || herb.price || 0),
         storeName: item.storeName || storeName || "متجر غير معروف",
       });
 
       if (user) {
         const prefIndex = user.herbPreferences.findIndex(
-          (p) => p.herbId === item.herbId
+          (p) => p.herbId && p.herbId.toString() === herbId.toString()
         );
 
         if (prefIndex !== -1) {
-          user.herbPreferences[prefIndex].score += 5;
+          user.herbPreferences[prefIndex].score =
+            Number(user.herbPreferences[prefIndex].score || 0) + 5;
         } else {
           user.herbPreferences.push({
-            herbId: item.herbId,
+            herbId: herbId,
             score: 5,
           });
         }
@@ -70,12 +90,12 @@ const createOrder = async (req, res) => {
 
     const order = await Order.create({
       buyerId,
-      buyerName,
-      buyerRole,
+      buyerName: buyerName || "زبون",
+      buyerRole: buyerRole || "customer",
       storeOwnerId,
-      storeName,
-      items,
-      totalPrice,
+      storeName: storeName || "متجر غير معروف",
+      items: normalizedItems,
+      totalPrice: Number(totalPrice || 0),
       status: "قيد التحضير",
     });
 
@@ -84,6 +104,8 @@ const createOrder = async (req, res) => {
       order,
     });
   } catch (error) {
+    console.log("CREATE ORDER ERROR:", error);
+
     res.status(500).json({
       message: "Server error",
       error: error.message,
@@ -146,14 +168,14 @@ const updateOrderStatus = async (req, res) => {
       updateData.receivedAt = new Date();
     }
 
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    );
+    const order = await Order.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+    });
 
     if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+      return res.status(404).json({
+        message: "Order not found",
+      });
     }
 
     res.status(200).json({

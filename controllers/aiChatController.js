@@ -12,7 +12,7 @@ const herbChat = async (req, res) => {
 
     const ollamaResponse = await axios.post("http://localhost:11434/api/chat", {
       model: "qwen2.5:3b",
-      messages: [
+     messages: [
         {
           role: "system",
           content: `
